@@ -4,13 +4,14 @@ import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import jax
 from jax import lax
-import cProfile
-import pstats
+import time
+
+
 
 # %%
 # Function to calculate the equilibrium distribution
 
-# @profile
+@jax.jit
 def equilibrium(rho, u):
     cdot3u = 3 * jnp.einsum('ai,axy->ixy', c, u)    # This is 3*c*u
     usq = jnp.einsum('axy->xy', u*u)                # This is u^2
@@ -18,7 +19,7 @@ def equilibrium(rho, u):
     feq = wrho * (1 + cdot3u*(1 + 0.5*cdot3u) - 1.5*usq[np.newaxis,:,:])
     return feq
 # Define the streaming function
-# @profile
+@jax.jit
 def Stream(g, c):
     def body(i, g):
         shift = (c.T[i][0], c.T[i][1])
@@ -28,7 +29,7 @@ def Stream(g, c):
     g = lax.fori_loop(1, 9, body, g)
     return g
 # Define the scattering function
-# @profile
+@jax.jit
 def Collide(g):
     rho = jnp.einsum('ijk->jk',g)
     u = jnp.einsum('ai,ixy->axy',c,g)/rho
@@ -71,32 +72,36 @@ k = 2*jnp.pi*n/NY  # Wavenumbers
 u = jnp.array([u_max*jnp.sin(k*Y.T),jnp.zeros((NX,NY))])
 f = equilibrium(rho,u) # create a local equilibrium initial condition. Note the term "local" it will decay due to viscosity
 
-# @profile
-def main():
-    global f, amp, u  # Ensure we modify the same variables
-    amp = jnp.array(u[0, NX // 2, NY // 8])
-    fig, ax = plt.subplots()
-    ax.plot(u[0, NX // 2, :])
-    ax.set_title('Wave decay')
-    ax.set_xlabel('y')
-    ax.set_ylabel('Amplitude')
-    for n in range(1, 101):
-        f = Stream(f, c)
-        f = Collide(f)
-        if n % 100 == 0:
-            u = jnp.einsum('ai,ixy->axy', c, f) / rho
-            ax.plot(u[0, NX // 2, :])
-            amp = jnp.append(amp, u[0, NX // 2, NY // 8])
+# %%
+amp=jnp.array(u[0,NX//2,NY//8]) # The amplitud of u in time
+#
+start = time.time()
 
-    # Plot amplitude decay
-    fig, ax = plt.subplots()
-    ax.plot(amp / amp[0])
-    ax.set_title('Amplitude decay')
-    ax.set_xlabel('Time t')
-    ax.set_ylabel('Amplitude')
+fig, ax = plt.subplots()
+ax.plot(u[0,NX//2,:])
+ax.set_title('Wave decay')
+ax.set_xlabel('y')
+ax.set_ylabel('Amplitude')
+for n in range(1,10001):
+    f = Stream(f, c)
+    f = Collide(f)
+    if n%100==0:
+        #Tmeasure=np.append(Tmeasure,np.array(time))
+        u = jnp.einsum('ai,ixy->axy',c,f)/rho  
+        ax.plot(u[0,NX//2,:])
+        amp=jnp.append(amp,u[0,NX//2,NY//8])
 
-if __name__ == "__main__":
-    with cProfile.Profile() as pr:
-        main()
-    stats = pstats.Stats(pr)
-    stats.sort_stats("cumtime").print_stats(15)  # Top 15 time-consuming calls
+
+jnp.linalg.norm(u).block_until_ready()
+print("Elapsed time:", time.time() - start)
+#    
+
+# %%
+# Plotting the amplitude decay
+fig, ax = plt.subplots()
+ax.plot(amp/amp[0])
+ax.set_title('Aplitude decay')
+ax.set_xlabel('Time t')
+ax.set_ylabel('Amplitude')
+
+
