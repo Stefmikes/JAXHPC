@@ -6,8 +6,6 @@ import jax
 from jax import lax
 import time
 
-
-
 # %%
 # Function to calculate the equilibrium distribution
 
@@ -82,6 +80,9 @@ ax.plot(u[0,NX//2,:])
 ax.set_title('Wave decay')
 ax.set_xlabel('y')
 ax.set_ylabel('Amplitude')
+plt.show()
+
+
 for n in range(1,10001):
     f = Stream(f, c)
     f = Collide(f)
@@ -103,5 +104,7 @@ ax.plot(amp/amp[0])
 ax.set_title('Aplitude decay')
 ax.set_xlabel('Time t')
 ax.set_ylabel('Amplitude')
+plt.show()
+
 
 
