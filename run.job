@@ -1,0 +1,28 @@
+#!/bin/bash -x
+#SBATCH --job-name=JAXHPC
+#SBATCH --partition=dev_cpu
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=4
+#SBATCH --time=00:30:00
+#SBATCH --mem=8G
+#SBATCH --export=ALL
+#SBATCH --output=slurm-%j.out
+
+module load devel/python/3.11.7-gnu-14.2
+
+# Set environment directory
+ENV_DIR=$HOME/jaxenv
+
+# Create env if it doesn't exist
+if [ ! -d "$ENV_DIR" ]; then
+    python -m venv $ENV_DIR
+    source $ENV_DIR/bin/activate
+    pip install --upgrade pip
+    pip install jax jaxlib numpy matplotlib
+else
+    source $ENV_DIR/bin/activate
+fi
+
+echo "Running with Python from: $(which python)"
+python JAXHPC.py
