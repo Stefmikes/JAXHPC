@@ -25,4 +25,7 @@ else
 fi
 
 echo "Running with Python from: $(which python)"
+echo "Running on ${SLURM_JOB_NUM_NODES} nodes with ${SLURM_JOB_CPUS_PER_NODE} cores each."
+echo "Each node has ${SLURM_MEM_PER_NODE} of memory allocated to this job."
+
 python JAXHPC.py
