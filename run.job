@@ -9,12 +9,13 @@
 #SBATCH --export=ALL
 #SBATCH --output=slurm-%j.out
 
+set -o pipefail
+export PYTHONUNBUFFERED=1
+
 module load devel/python/3.11.7-gnu-14.2
 
-# Set environment directory
 ENV_DIR=$HOME/jaxenv
 
-# Create env if it doesn't exist
 if [ ! -d "$ENV_DIR" ]; then
     python -m venv $ENV_DIR
     source $ENV_DIR/bin/activate
@@ -28,4 +29,4 @@ echo "Running with Python from: $(which python)"
 echo "Running on ${SLURM_JOB_NUM_NODES} nodes with ${SLURM_JOB_CPUS_PER_NODE} cores each."
 echo "Each node has ${SLURM_MEM_PER_NODE} of memory allocated to this job."
 
-python JAXHPC.py
+python -u JAXHPC.py
