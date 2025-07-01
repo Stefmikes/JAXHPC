@@ -1,32 +1,56 @@
-import jax 
+import jax
 import jax.numpy as jnp
 from jax import lax
 import matplotlib.pyplot as plt
 import time
+import os
+import sys
 
-print("All JAX devices:", jax.devices())
-print("Number of JAX devices available:", jax.device_count())
-print("Number of local devices:", jax.local_device_count())
-n_devices = jax.local_device_count()
+if sys.platform in ['linux', 'darwin']:
+    try:
+        import jax.distributed
+        distributed_env_vars = ['JAX_DIST_ADDR', 'JAX_DIST_PORT', 'JAX_DIST_PROCESS_COUNT', 'JAX_DIST_PROCESS_ID']
+        if all(var in os.environ for var in distributed_env_vars):
+            jax.distributed.initialize(
+                coordinator_address=os.environ['JAX_DIST_ADDR'] + ":" + os.environ['JAX_DIST_PORT'],
+                num_processes=int(os.environ['JAX_DIST_PROCESS_COUNT']),
+                process_id=int(os.environ['JAX_DIST_PROCESS_ID']),
+            )
+            print(f"Distributed JAX initialized for process {jax.process_index()} of {jax.process_count()}")
+        else:
+            print("Distributed environment variables not set. Running in standalone mode.")
+    except ImportError:
+        print("jax.distributed not available, running in standalone mode.")
+else:
+    print(f"Skipping distributed initialization on unsupported platform: {sys.platform}")
+
+print(f"Process index: {jax.process_index() if hasattr(jax, 'process_index') else 0}")
+print(f"Process count: {jax.process_count() if hasattr(jax, 'process_count') else 1}")
+
+# Now your devices include all devices on all nodes if distributed, else local devices
+devices = jax.devices()
+print("All JAX devices:", devices)
+print("Local devices:", jax.local_devices())
+print("Global device count:", jax.device_count())
 
 # --- Parameters ---
 NX = 60
 NY = 40
-NSTEPS = 1000  # Reduced for demo
+NSTEPS = 1000  # Adjust for your case
 omega = 1.5
 scale = 1
 
 print(f"Domain size: NX={NX}, NY={NY}")
 print(f"Scale: {scale}")
-print(f"Number of devices used for parallelization: {n_devices}")
+
+n_devices = jax.device_count()
+assert NX % n_devices == 0, "NX must be divisible by total number of devices"
+NXs = NX // n_devices  # Sub-domain size per device
 
 # Lattice weights and velocity vectors
 w = jnp.array([4/9, 1/9, 1/9, 1/9, 1/9, 1/36, 1/36, 1/36, 1/36])
 c = jnp.array([[0, 1, 0, -1,  0, 1, -1, -1,  1],
                [0, 0, 1,  0, -1, 1,  1, -1, -1]])
-
-assert NX % n_devices == 0, "NX must be divisible by number of devices"
-NXs = NX // n_devices  # Sub-domain size per device
 
 @jax.jit
 def equilibrium(rho, u):
@@ -72,10 +96,11 @@ def step_fn(f, _):
     amp_t = u[0, NXs // 2, NY // 8]
     return f, amp_t
 
-p_step_fn = jax.pmap(step_fn, axis_name='devices')
+p_step_fn = jax.pmap(step_fn, axis_name='devices', devices=devices)
 
+# Initialize domain
 f_init, rho = init_subdomain(NX, NY)
-f_init = f_init.reshape(9, n_devices, NXs, NY).transpose(1,0,2,3)
+f_init = f_init.reshape(9, n_devices, NXs, NY).transpose(1, 0, 2, 3)
 
 def run_simulation(f_init, steps):
     def body_fn(carry, _):
@@ -92,28 +117,29 @@ jax.device_get(f_final)
 elapsed_time = time.time() - start
 print(f"Elapsed time: {elapsed_time:.3f}s")
 
-# Calculate and print BLUPS
+# Calculate BLUPS
 total_updates = NX * NY * NSTEPS
 blups = total_updates / elapsed_time / 1e9
 print(f"Performance: {blups:.3f} BLUPS (Billion Lattice Updates Per Second)")
 
-amplitudes_host = jax.device_get(amplitudes[:, 0])
+# Only plot on main process
+if hasattr(jax, 'process_index') and jax.process_index() == 0:
+    amplitudes_host = jax.device_get(amplitudes[:, 0])
+    f_host = jax.device_get(f_final)
+    f_last = f_host[-1]
 
-f_host = jax.device_get(f_final)
-f_last = f_host[-1]
+    f_last = f_last.transpose(1, 0, 2).reshape(9, NX, NY)
+    rho = jnp.einsum('ijk->jk', f_last)
+    u = jnp.einsum('ai,ixy->axy', c, f_last) / rho
 
-f_last = f_last.transpose(1, 0, 2).reshape(9, NX, NY)
-rho = jnp.einsum('ijk->jk', f_last)
-u = jnp.einsum('ai,ixy->axy', c, f_last) / rho
+    plt.plot(amplitudes_host / amplitudes_host[0])
+    plt.title("Amplitude Decay (device 0)")
+    plt.xlabel("Time step")
+    plt.ylabel("Amplitude")
+    plt.show()
 
-plt.plot(amplitudes_host / amplitudes_host[0])
-plt.title("Amplitude Decay (device 0)")
-plt.xlabel("Time step")
-plt.ylabel("Amplitude")
-plt.show()
-
-plt.plot(u[0, NX // 2, :])
-plt.title("Wave decay (final velocity profile)")
-plt.xlabel("y")
-plt.ylabel("Amplitude")
-plt.show()
+    plt.plot(u[0, NX // 2, :])
+    plt.title("Wave decay (final velocity profile)")
+    plt.xlabel("y")
+    plt.ylabel("Amplitude")
+    plt.show()
