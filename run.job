@@ -1,31 +1,31 @@
-#!/bin/bash
+#!/bin/bash -x
 #SBATCH --job-name=JAXHPC
 #SBATCH --partition=dev_cpu
 #SBATCH --nodes=2
-#SBATCH --ntasks-per-node=4       # 4 tasks per node
+#SBATCH --ntasks-per-node=4
 #SBATCH --cpus-per-task=4
 #SBATCH --time=00:30:00
 #SBATCH --mem=8G
 #SBATCH --export=ALL
 #SBATCH --output=slurm-%j.out
 
+set -o pipefail
+export PYTHONUNBUFFERED=1
+
 module load devel/python/3.11.7-gnu-14.2
 
 ENV_DIR=$HOME/jaxenv
 
 if [ ! -d "$ENV_DIR" ]; then
-    if [ $SLURM_PROCID -eq 0 ]; then
-        python -m venv $ENV_DIR
-        source $ENV_DIR/bin/activate
-        pip install --upgrade pip
-        pip install jax jaxlib numpy matplotlib
-    fi
-    # Wait for proc 0 to finish venv creation & installation
-    srun --ntasks=1 --nodes=1 --exclusive sleep 10
+    python -m venv $ENV_DIR
+    source $ENV_DIR/bin/activate
+    pip install --upgrade pip
+    pip install jax jaxlib numpy matplotlib
+else
+    source $ENV_DIR/bin/activate
 fi
 
-# Setup JAX distributed environment variables
-
+# Setup JAX distributed env vars for multi-node run
 export JAX_DIST_ADDR=$(scontrol show hostnames $SLURM_JOB_NODELIST | head -n 1)
 export JAX_DIST_PORT=12345
 export JAX_DIST_PROCESS_COUNT=$SLURM_NTASKS
