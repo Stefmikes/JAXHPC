@@ -6,24 +6,6 @@ import time
 import os
 import sys
 
-if sys.platform in ['linux', 'darwin']:
-    try:
-        import jax.distributed
-        distributed_env_vars = ['JAX_DIST_ADDR', 'JAX_DIST_PORT', 'JAX_DIST_PROCESS_COUNT', 'JAX_DIST_PROCESS_ID']
-        if all(var in os.environ for var in distributed_env_vars):
-            jax.distributed.initialize(
-                coordinator_address=os.environ['JAX_DIST_ADDR'] + ":" + os.environ['JAX_DIST_PORT'],
-                num_processes=int(os.environ['JAX_DIST_PROCESS_COUNT']),
-                process_id=int(os.environ['JAX_DIST_PROCESS_ID']),
-            )
-            print(f"Distributed JAX initialized for process {jax.process_index()} of {jax.process_count()}")
-        else:
-            print("Distributed environment variables not set. Running in standalone mode.")
-    except ImportError:
-        print("jax.distributed not available, running in standalone mode.")
-else:
-    print(f"Skipping distributed initialization on unsupported platform: {sys.platform}")
-
 print(f"Process index: {jax.process_index() if hasattr(jax, 'process_index') else 0}")
 print(f"Process count: {jax.process_count() if hasattr(jax, 'process_count') else 1}")
 
@@ -34,8 +16,8 @@ print("Local devices:", jax.local_devices())
 print("Global device count:", jax.device_count())
 
 # --- Parameters ---
-NX = 600
-NY = 400
+NX = 400
+NY = 300
 NSTEPS = 10000  # Adjust for your case
 omega = 1.7
 scale = 1
@@ -123,14 +105,14 @@ blups = total_updates / elapsed_time / 1e9
 print(f"Performance: {blups:.3f} BLUPS (Billion Lattice Updates Per Second)")
 
 # Only plot on main process
-if hasattr(jax, 'process_index') and jax.process_index() == 0:
-    amplitudes_host = jax.device_get(amplitudes[:, 0])
-    f_host = jax.device_get(f_final)
-    f_last = f_host[-1]
+# if hasattr(jax, 'process_index') and jax.process_index() == 0:
+#     amplitudes_host = jax.device_get(amplitudes[:, 0])
+#     f_host = jax.device_get(f_final)
+#     f_last = f_host[-1]
 
-    f_last = f_last.transpose(1, 0, 2).reshape(9, NX, NY)
-    rho = jnp.einsum('ijk->jk', f_last)
-    u = jnp.einsum('ai,ixy->axy', c, f_last) / rho
+#     f_last = f_last.transpose(1, 0, 2).reshape(9, NX, NY)
+#     rho = jnp.einsum('ijk->jk', f_last)
+#     u = jnp.einsum('ai,ixy->axy', c, f_last) / rho
 
     # plt.plot(amplitudes_host / amplitudes_host[0])
     # plt.title("Amplitude Decay (device 0)")

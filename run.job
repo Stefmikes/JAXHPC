@@ -12,6 +12,7 @@ set -o pipefail
 export PYTHONUNBUFFERED=1
 
 module load devel/python/3.11.7-gnu-14.2
+module load toolkit/nvidia-hpc-sdk/25.1
 
 ENV_DIR=$HOME/jaxenv
 
@@ -19,7 +20,8 @@ if [ ! -d "$ENV_DIR" ]; then
     python -m venv $ENV_DIR
     source $ENV_DIR/bin/activate
     pip install --upgrade pip
-    pip install jax jaxlib numpy matplotlib
+    pip install --upgrade "jax[cuda12_pip]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+    pip install numpy matplotlib
 else
     source $ENV_DIR/bin/activate
 fi
