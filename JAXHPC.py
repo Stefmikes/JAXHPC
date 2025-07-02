@@ -34,10 +34,10 @@ print("Local devices:", jax.local_devices())
 print("Global device count:", jax.device_count())
 
 # --- Parameters ---
-NX = 60
-NY = 40
-NSTEPS = 1000  # Adjust for your case
-omega = 0.7
+NX = 600
+NY = 400
+NSTEPS = 10000  # Adjust for your case
+omega = 1.7
 scale = 1
 
 print(f"Domain size: NX={NX}, NY={NY}")
@@ -132,14 +132,14 @@ if hasattr(jax, 'process_index') and jax.process_index() == 0:
     rho = jnp.einsum('ijk->jk', f_last)
     u = jnp.einsum('ai,ixy->axy', c, f_last) / rho
 
-    plt.plot(amplitudes_host / amplitudes_host[0])
-    plt.title("Amplitude Decay (device 0)")
-    plt.xlabel("Time step")
-    plt.ylabel("Amplitude")
-    plt.show()
+    # plt.plot(amplitudes_host / amplitudes_host[0])
+    # plt.title("Amplitude Decay (device 0)")
+    # plt.xlabel("Time step")
+    # plt.ylabel("Amplitude")
+    # plt.show()
 
-    plt.plot(u[0, NX // 2, :])
-    plt.title("Wave decay (final velocity profile)")
-    plt.xlabel("y")
-    plt.ylabel("Amplitude")
-    plt.show()
+    # plt.plot(u[0, NX // 2, :])
+    # plt.title("Wave decay (final velocity profile)")
+    # plt.xlabel("y")
+    # plt.ylabel("Amplitude")
+    # plt.show()
