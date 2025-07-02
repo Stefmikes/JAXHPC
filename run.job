@@ -7,7 +7,6 @@
 #SBATCH --time=00:30:00
 #SBATCH --mem=8G
 #SBATCH --export=ALL
-#SBATCH --output=slurm-%j.out
 
 set -o pipefail
 export PYTHONUNBUFFERED=1
@@ -37,4 +36,4 @@ echo "JAX_DIST_PORT=$JAX_DIST_PORT"
 echo "JAX_DIST_PROCESS_COUNT=$JAX_DIST_PROCESS_COUNT"
 echo "JAX_DIST_PROCESS_ID=$JAX_DIST_PROCESS_ID"
 
-python -u JAXHPC.py
+srun python -u JAXHPC.py

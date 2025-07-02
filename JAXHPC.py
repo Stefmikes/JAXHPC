@@ -37,7 +37,7 @@ print("Global device count:", jax.device_count())
 NX = 60
 NY = 40
 NSTEPS = 1000  # Adjust for your case
-omega = 1.5
+omega = 0.7
 scale = 1
 
 print(f"Domain size: NX={NX}, NY={NY}")

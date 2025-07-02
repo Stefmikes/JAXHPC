@@ -8,7 +8,7 @@ import time
 # LBM parameters
 NX, NY = 60, 60  # square cavity
 NSTEPS = 10000
-omega = 1.0  # relaxation parameter
+omega = 0.7  # relaxation parameter
 tau = 1 / omega
 u_lid = 0.1  # lid velocity
 
