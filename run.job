@@ -24,10 +24,11 @@ if [ ! -d "$ENV_DIR" ]; then
     pip install --upgrade pip
 
     # Install GPU-compatible JAX (CUDA 12.x compatible)
-    pip install --upgrade "jax[cuda12_pip]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
-
+    pip install --upgrade "jax[cuda12]"
     # Additional libraries
     pip install numpy matplotlib
+    # 4. Unset LD_LIBRARY_PATH if set
+    unset LD_LIBRARY_PATH
 else
     source $ENV_DIR/bin/activate
 fi
