@@ -1,9 +1,9 @@
 #!/bin/bash -x
 #SBATCH --job-name=JAXHPC
-#SBATCH --partition=dev_cpu
-#SBATCH --nodes=2
-#SBATCH --ntasks-per-node=4
-#SBATCH --cpus-per-task=4
+#SBATCH --partition=dev_gpu_a100_il
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1                 # You don't want to oversubscribe the GPU
+#SBATCH --gpus-per-node=1                   # Explicitly request a GPU
 #SBATCH --time=00:30:00
 #SBATCH --mem=8G
 #SBATCH --export=ALL
@@ -11,31 +11,30 @@
 set -o pipefail
 export PYTHONUNBUFFERED=1
 
+# Load compatible Python and CUDA toolchain
 module load devel/python/3.11.7-gnu-14.2
 module load toolkit/nvidia-hpc-sdk/25.1
 
 ENV_DIR=$HOME/jaxenv
 
+# Install virtual environment and GPU JAX only once
 if [ ! -d "$ENV_DIR" ]; then
     python -m venv $ENV_DIR
     source $ENV_DIR/bin/activate
     pip install --upgrade pip
+
+    # Install GPU-compatible JAX (CUDA 12.x compatible)
     pip install --upgrade "jax[cuda12_pip]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+
+    # Additional libraries
     pip install numpy matplotlib
 else
     source $ENV_DIR/bin/activate
 fi
 
-# Setup JAX distributed env vars for multi-node run
-export JAX_DIST_ADDR=$(scontrol show hostnames $SLURM_JOB_NODELIST | head -n 1)
-export JAX_DIST_PORT=12345
-export JAX_DIST_PROCESS_COUNT=$SLURM_NTASKS
-export JAX_DIST_PROCESS_ID=$SLURM_PROCID
+# Optional: check GPU visibility
+nvidia-smi
+python -c "import jax; print('JAX devices:', jax.devices())"
 
-echo "Running distributed JAX with:"
-echo "JAX_DIST_ADDR=$JAX_DIST_ADDR"
-echo "JAX_DIST_PORT=$JAX_DIST_PORT"
-echo "JAX_DIST_PROCESS_COUNT=$JAX_DIST_PROCESS_COUNT"
-echo "JAX_DIST_PROCESS_ID=$JAX_DIST_PROCESS_ID"
-
+# Run your JAX code
 srun python -u JAXHPC.py
