@@ -13,7 +13,7 @@ export PYTHONUNBUFFERED=1
 
 # Load compatible Python and CUDA toolchain
 module load devel/python/3.11.7-gnu-14.2
-module load toolkit/nvidia-hpc-sdk/25.1
+module load devel/cuda/12.8
 
 ENV_DIR=$HOME/jaxenv
 
