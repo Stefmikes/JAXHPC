@@ -15,14 +15,13 @@ export PYTHONUNBUFFERED=1
 module load devel/python/3.11.7-gnu-14.2
 module load devel/cuda/12.8
 
-ENV_DIR=$HOME/jaxenv
+ENV_DIR=$HOME/gpu_jax_env
 
 # Install virtual environment and GPU JAX only once
 if [ ! -d "$ENV_DIR" ]; then
     python -m venv $ENV_DIR
     source $ENV_DIR/bin/activate
     pip install --upgrade pip
-
     # Install GPU-compatible JAX (CUDA 12.x compatible)
     pip install --upgrade "jax[cuda12]"
     # Additional libraries
