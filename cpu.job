@@ -3,7 +3,6 @@
 #SBATCH --partition=dev_cpu 
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1                 # You don't want to oversubscribe the GPU
-#SBATCH --gpus-per-node=1                   # Explicitly request a GPU
 #SBATCH --time=00:30:00
 #SBATCH --mem=8G
 #SBATCH --export=ALL
