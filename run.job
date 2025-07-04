@@ -37,4 +37,4 @@ nvidia-smi
 python -c "import jax; print('JAX devices:', jax.devices())"
 
 # Run your JAX code
-srun python -u JAXHPC.py
+srun python -u OriginalScript.py

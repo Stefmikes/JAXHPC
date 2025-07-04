@@ -3,11 +3,7 @@ import jax.numpy as jnp
 from jax import lax
 import matplotlib.pyplot as plt
 import time
-import os
-import sys
 
-print(f"Process index: {jax.process_index() if hasattr(jax, 'process_index') else 0}")
-print(f"Process count: {jax.process_count() if hasattr(jax, 'process_count') else 1}")
 
 # Now your devices include all devices on all nodes if distributed, else local devices
 devices = jax.devices()
