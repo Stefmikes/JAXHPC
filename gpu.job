@@ -1,0 +1,41 @@
+#!/bin/bash -x
+#SBATCH --job-name=JAXHPC
+#SBATCH --partition=dev_gpu_a100_il
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1                 # You don't want to oversubscribe the GPU
+#SBATCH --gpus-per-node=1                   # Explicitly request a GPU
+#SBATCH --time=00:30:00
+#SBATCH --mem=8G
+#SBATCH --export=ALL
+
+set -o pipefail
+export PYTHONUNBUFFERED=1
+
+# Load compatible Python and CUDA toolchain
+module load devel/python/3.11.7-gnu-14.2
+module load devel/cuda/12.8
+
+ENV_DIR=$HOME/gpu_jax_env
+
+# Install virtual environment and GPU JAX only once
+if [ ! -d "$ENV_DIR" ]; then
+    python -m venv $ENV_DIR
+    source $ENV_DIR/bin/activate
+    pip install --upgrade pip
+    # Install GPU-compatible JAX (CUDA 12.x compatible)
+    pip install --upgrade "jax[cuda12]"
+    # Additional libraries
+    pip install numpy matplotlib
+    # 4. Unset LD_LIBRARY_PATH if set
+    unset LD_LIBRARY_PATH
+else
+    source $ENV_DIR/bin/activate
+    unset LD_LIBRARY_PATH
+fi
+
+# Optional: check GPU visibility
+nvidia-smi
+python -c "import jax; print('JAX devices:', jax.devices())"
+
+# Run your JAX code
+srun python -u OriginalScript.py
