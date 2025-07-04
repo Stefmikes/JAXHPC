@@ -31,8 +31,6 @@ else
     unset LD_LIBRARY_PATH
 fi
 
-# Optional: check GPU visibility
-nvidia-smi
 python -c "import jax; print('JAX devices:', jax.devices())"
 
 # Run your JAX code
