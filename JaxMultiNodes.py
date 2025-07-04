@@ -31,7 +31,7 @@ w = jnp.array([4/9, 1/9, 1/9, 1/9, 1/9, 1/36, 1/36, 1/36, 1/36], dtype=dtype)
 c = jnp.array([[0, 1, 0, -1,  0, 1, -1, -1,  1],
                [0, 0, 1,  0, -1, 1,  1, -1, -1]], dtype=dtype)
 
-@jax.jit  # You can experiment removing jit if needed with pmap
+# @jax.jit  # You can experiment removing jit if needed with pmap
 def equilibrium(rho, u):
     cdot3u = 3 * jnp.einsum('ai,axy->ixy', c, u)
     usq = jnp.einsum('axy->xy', u*u)
