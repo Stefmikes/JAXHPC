@@ -57,16 +57,18 @@ rho0   = 1.0               # rest density
 #Re     = NX*u_max/nu     # Reynolds number; not used in the simulation itself
 #
 # Define the wights and channel velocities
-w = jnp.array([4/9, 1/9, 1/9, 1/9, 1/9, 1/36, 1/36, 1/36, 1/36]) # weights
+
+dtype = jnp.float32
+w = jnp.array([4/9, 1/9, 1/9, 1/9, 1/9, 1/36, 1/36, 1/36, 1/36],dtype=dtype) # weights
 c = jnp.array([[0, 1, 0, -1,  0, 1, -1, -1,  1],  # velocities, x components
-              [0, 0, 1,  0, -1, 1,  1, -1, -1]]) # velocities, y components
+              [0, 0, 1,  0, -1, 1,  1, -1, -1]],dtype=dtype) # velocities, y components
 #
 # Define the gridpoints
 x = jnp.arange(NX)+0.5    # the position of the points is half-ways in the interval
 y = jnp.arange(NY)+0.5
 X,Y = jnp.meshgrid(x,y)
 # Initialize the density with 1.0 and the velocity with a sinusoidal
-rho=jnp.ones((NX,NY))
+rho=jnp.ones((NX,NY),dtype=dtype)
 n = 1     # multiples of the basic wavenumber try to play with n
 k = 2*jnp.pi*n/NY  # Wavenumbers
 u = jnp.array([u_max*jnp.sin(k*Y.T),jnp.zeros((NX,NY))])
@@ -90,18 +92,17 @@ from functools import partial
 
 @partial(jax.jit, static_argnums=1)
 def run_simulation(f_init, NSTEPS):
-    def body(n, val):
-        f, amp = val
+    def body(carry, _):
+        f, amp, n = carry
         f = Stream(f, c)
         f = Collide(f)
-        rho = jnp.einsum('ijk->jk', f)
-        u = jnp.einsum('ai,ixy->axy', c, f) / rho
         amp = amp.at[n + 1].set(u[0, NX // 2, NY // 8])
-        return f, amp
+        return (f, amp, n + 1), None
 
     amp0 = jnp.zeros(NSTEPS + 1).at[0].set(u[0, NX // 2, NY // 8])
-    f_final, amp = lax.fori_loop(0, NSTEPS, body, (f_init, amp0))
+    (f_final, amp, _), _ = lax.scan(body, (f_init, amp0, 0), None, length=NSTEPS)
     return f_final, amp
+
 
 print(f"Domain size: NX={NX}, NY={NY}")
 print(f"Number of steps: {NSTEPS}")
