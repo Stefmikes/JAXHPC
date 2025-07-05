@@ -14,7 +14,7 @@ for i, d in enumerate(all_devices):
     print(f"  Device {i}: {d}")
 
 # ✅ Domain setup
-NX, NY = 40000, 40000 
+NX, NY = 8000, 8000 
 NSTEPS = 10000
 omega = 1.7
 u_max = 0.1

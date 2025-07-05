@@ -38,4 +38,4 @@ nvidia-smi
 python -c "import jax; print('JAX devices:', jax.devices())"
 
 # Run your JAX code
-srun python -u JaxSingleProcessOnly.py
+srun python -u JaxJitSingleProcessOnly.py

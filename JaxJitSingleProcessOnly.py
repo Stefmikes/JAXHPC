@@ -39,8 +39,8 @@ def Collide(g):
     return g
 
 # dimensions of the 2D lattice and the Lattice parameters
-NX=40000 #int(input("nx = "))
-NY=40000 #int(input("ny = "))
+NX=8000 #int(input("nx = "))
+NY=8000 #int(input("ny = "))
 # simulation parameters
 scale  = 1               # set simulation size
 #NX     = 32*scale        # domain size
