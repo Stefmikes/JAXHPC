@@ -3,7 +3,7 @@ import jax
 import jax.numpy as jnp
 from jax.experimental import mesh_utils
 from jax.sharding import Mesh, PartitionSpec as P, NamedSharding
-from jax.experimental.pjit import pjit as pjit_fn
+from jax.experimental.pjit import pjit
 
 # ✅ Log platform and available devices
 print(f"JAX platform: {jax.default_backend()}")
@@ -65,11 +65,12 @@ if num_devices > 1:
         sharding = NamedSharding(mesh, P(None, 'x', None))
         f = jax.device_put(f0, sharding)
 
-        @pjit_fn(in_shardings=P(None, 'x', None), out_shardings=P(None, 'x', None))
+        @pjit(in_shardings=P(None, 'x', None), out_shardings=P(None, 'x', None))
         def lbm_step(f):
             f = stream(f)
             f, _ = collide(f)
             return f
+
 
         start = time.time()
         for _ in range(NSTEPS):
