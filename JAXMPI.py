@@ -11,6 +11,7 @@ comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
+
 # Bind each MPI rank to a GPU device
 os.environ["CUDA_VISIBLE_DEVICES"] = str(rank % jax.device_count())
 jax.config.update("jax_platform_name", "gpu")

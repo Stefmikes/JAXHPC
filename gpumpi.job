@@ -2,7 +2,7 @@
 #SBATCH --job-name=JAXHPC
 #SBATCH --partition=dev_gpu_a100_il
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node=1                   # ✔ Keep 1 task per GPU
+#SBATCH --ntasks-per-node=2                   # ✔ Keep 1 task per GPU
 #SBATCH --gpus-per-node=2                     # ✔ Using 2 GPUs
 #SBATCH --time=00:30:00
 #SBATCH --mem=8G
@@ -22,6 +22,8 @@ ENV_DIR=$HOME/gpuMPI_jax_env
 if [ ! -d "$ENV_DIR" ]; then
     python -m venv $ENV_DIR
     source $ENV_DIR/bin/activate
+
+
     pip install --upgrade pip
 
     # ✅ Install GPU-compatible JAX (CUDA 12.x)
@@ -36,6 +38,8 @@ else
     source $ENV_DIR/bin/activate
 fi
 
+export XLA_PYTHON_CLIENT_PREALLOCATE=false
+export XLA_FLAGS="--xla_gpu_enable_async_collectives=true"
 # ✅ Fix CUDA & MPI library paths explicitly
 unset LD_LIBRARY_PATH
 export LD_LIBRARY_PATH=$(dirname $(which mpicc))/../lib:$LD_LIBRARY_PATH
