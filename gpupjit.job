@@ -2,8 +2,8 @@
 #SBATCH --job-name=JAXHPC
 #SBATCH --partition=dev_gpu_a100_il
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node=4                          
-#SBATCH --gpus-per-node=4                  
+#SBATCH --ntasks-per-node=1               # ✅ Only 1 task
+#SBATCH --gpus-per-node=4                 # ✅ Use all 4 GPUs in a single process
 #SBATCH --time=00:30:00
 #SBATCH --mem=16G
 #SBATCH --export=ALL
@@ -11,36 +11,32 @@
 set -o pipefail
 export PYTHONUNBUFFERED=1
 
-
-# Load modules
-module load lib/hdf5/1.14-gnu-14.2-openmpi-5.0
+# ✅ Load modules
 module load devel/python/3.11.7-gnu-14.2
 module load devel/cuda/12.8
 
 ENV_DIR=$HOME/pjit_jax_env
 
+# ✅ Setup environment
 if [ ! -d "$ENV_DIR" ]; then
     python -m venv $ENV_DIR
     source $ENV_DIR/bin/activate
     pip install --upgrade pip
-    pip install --upgrade "jax[cuda12]"
-    MPICC=mpicc pip install --no-binary=mpi4py mpi4py
+    pip install --upgrade "jax[cuda12]"  # Installs jaxlib with CUDA support
     pip install numpy matplotlib
 else
     source $ENV_DIR/bin/activate
 fi
 
+# ✅ Optional: prevent full GPU memory preallocation
 export XLA_PYTHON_CLIENT_PREALLOCATE=false
 
+# ✅ Fix MPI path issues (even though unused here)
 unset LD_LIBRARY_PATH
-export LD_LIBRARY_PATH=$(dirname $(which mpicc))/../lib:$LD_LIBRARY_PATH
 
+# ✅ GPU check
 nvidia-smi
 python -c "import jax; print('JAX devices:', jax.devices())"
 
-# Launch with mpirun, setting CUDA_VISIBLE_DEVICES per local rank:
-mpirun -np $SLURM_NTASKS bash -c '
-  export CUDA_VISIBLE_DEVICES=$OMPI_COMM_WORLD_LOCAL_RANK
-  echo "Rank $OMPI_COMM_WORLD_RANK using GPU $CUDA_VISIBLE_DEVICES"
-  python PJIT.py
-'
+# ✅ Run your multi-GPU PJIT simulation with one process
+python PJIT.py

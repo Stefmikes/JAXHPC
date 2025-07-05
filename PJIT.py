@@ -5,7 +5,7 @@ from jax.experimental import mesh_utils
 from jax.sharding import Mesh, PartitionSpec as P, NamedSharding
 from jax.experimental.pjit import pjit
 
-# ✅ Log platform and available devices (added block)
+# ✅ Log platform and available devices
 print(f"JAX platform: {jax.default_backend()}")
 all_devices = jax.devices()
 print(f"JAX is using {len(all_devices)} devices:")
@@ -24,9 +24,10 @@ dtype = jnp.float32
 w = jnp.array([4/9,1/9,1/9,1/9,1/9,1/36,1/36,1/36,1/36], dtype)
 c = jnp.array([[0,1,0,-1,0,1,-1,-1,1], [0,0,1,0,-1,1,1,-1,-1]], dtype)
 
-# ✅ Setup JAX Mesh
-devices = mesh_utils.create_device_mesh((len(jax.devices()),))
-mesh = Mesh(devices, axis_names=('x',))
+# ✅ Setup JAX Mesh over all devices
+mesh_shape = (len(all_devices),)  # 1D mesh
+devices = mesh_utils.create_device_mesh(mesh_shape)
+mesh = Mesh(devices, axis_names=('x',))  # axis name 'x' for sharding
 
 # ✅ Lattice functions
 def equilibrium(rho, u):
@@ -56,19 +57,19 @@ v0 = jnp.zeros_like(u0)
 u_init = jnp.array([u0, v0])
 f0 = equilibrium(rho0, u_init).astype(dtype)
 
-# ✅ Main loop with mesh and sharding
+# ✅ Main simulation
 with mesh:
+    # Partition only the x-dimension (first dim of f0)
     sharding = NamedSharding(mesh, P('x', None, None))
     f = jax.device_put(f0, sharding)
 
-    # ✅ Wrap lbm_step with pjit inside mesh context
+    @pjit(in_shardings=P('x', None, None), out_shardings=P('x', None, None))
     def lbm_step(f):
         f = stream(f)
         f, _ = collide(f)
         return f
 
-    lbm_step = pjit(lbm_step, in_shardings=P('x', None, None), out_shardings=P('x', None, None))
-
+    # ✅ Run main loop
     start = time.time()
     for _ in range(NSTEPS):
         f = lbm_step(f)
@@ -79,8 +80,8 @@ elapsed = end - start
 total_updates = NX * NY * NSTEPS
 blups = total_updates / elapsed / 1e9
 
-print(f"Ran on {len(devices)} GPUs: {blups:.3f} BLUPS")
-print(f"Elapsed time: {elapsed:.2f} seconds")
-print(f"Domain size: NX={NX}, NY={NY}")
-print(f"Number of steps: {NSTEPS}")
-print(f"Omega: {omega}, Viscosity: {nu:.4e}")
+print(f"\n✅ Ran on {len(all_devices)} GPUs: {blups:.3f} BLUPS")
+print(f"⏱️  Elapsed time: {elapsed:.2f} seconds")
+print(f"📐 Domain size: NX={NX}, NY={NY}")
+print(f"🔁 Number of steps: {NSTEPS}")
+print(f"⚙️  Omega: {omega}, Viscosity: {nu:.4e}")
