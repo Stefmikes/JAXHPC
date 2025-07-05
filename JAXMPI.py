@@ -8,8 +8,9 @@ comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-# ✅ Set visible GPU for this rank BEFORE importing jax
-# os.environ["CUDA_VISIBLE_DEVICES"] = str(rank)
+local_rank = int(os.environ.get("OMPI_COMM_WORLD_LOCAL_RANK", rank))  # fallback to rank
+
+os.environ["CUDA_VISIBLE_DEVICES"] = str(local_rank)
 
 # ✅ Now import JAX after setting CUDA visibility
 import jax
