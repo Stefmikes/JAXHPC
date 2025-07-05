@@ -65,12 +65,16 @@ if num_devices > 1:
         sharding = NamedSharding(mesh, P(None, 'x', None))
         f = jax.device_put(f0, sharding)
 
-        @pjit(in_shardings=P(None, 'x', None), out_shardings=P(None, 'x', None))
         def lbm_step(f):
             f = stream(f)
             f, _ = collide(f)
             return f
 
+        lbm_step = pjit(
+            lbm_step,
+            in_shardings=P(None, 'x', None),
+            out_shardings=P(None, 'x', None)
+        )
 
         start = time.time()
         for _ in range(NSTEPS):
