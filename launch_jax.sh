@@ -1,12 +1,10 @@
 #!/bin/bash
 
-# Get the local rank assigned by OpenMPI
-LOCAL_RANK=${OMPI_COMM_WORLD_LOCAL_RANK:-0}
+# Correctly set GPU visibility before Python starts
+export CUDA_VISIBLE_DEVICES=$OMPI_COMM_WORLD_LOCAL_RANK
 
-# Bind this rank to one specific GPU
-export CUDA_VISIBLE_DEVICES=$LOCAL_RANK
+echo "Rank $OMPI_COMM_WORLD_RANK using GPU $CUDA_VISIBLE_DEVICES"
 
-echo "Rank $LOCAL_RANK using GPU $CUDA_VISIBLE_DEVICES"
+# Do not set CUDA_VISIBLE_DEVICES anywhere else!
 
-# Run your Python code
 exec python -u JAXMPI.py
