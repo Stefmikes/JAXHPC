@@ -2,9 +2,10 @@
 #SBATCH --job-name=JAXHPC
 #SBATCH --partition=dev_gpu_a100_il
 #SBATCH --nodes=1
-#SBATCH --ntasks=2                         # ✅ Total MPI ranks
-#SBATCH --gpus-per-task=1                  # ✅ 1 GPU per rank
-#SBATCH --cpus-per-task=8                  # ✅ Bind CPU cores
+#SBATCH --ntasks=2                          # 2 MPI ranks
+#SBATCH --gpus-per-task=1                   # 1 GPU per task
+#SBATCH --gpus=2                            # ✅ Explicit total GPU request
+#SBATCH --cpus-per-task=8
 #SBATCH --time=00:30:00
 #SBATCH --mem=16G
 #SBATCH --export=ALL
@@ -31,23 +32,23 @@ else
     source $ENV_DIR/bin/activate
 fi
 
-# ✅ Prevent JAX memory preallocation
+# ✅ Prevent JAX from allocating all memory
 export XLA_PYTHON_CLIENT_PREALLOCATE=false
 
-# ✅ Fix LD_LIBRARY_PATH for CUDA + MPI
+# ✅ Fix CUDA/MPI path issues
 unset LD_LIBRARY_PATH
 export LD_LIBRARY_PATH=$(dirname $(which mpicc))/../lib:$LD_LIBRARY_PATH
 
-# ✅ Suppress UCX and HCOLL warnings
+# ✅ Suppress warnings
 export OMPI_MCA_coll_hcoll_enable=0
 export OMPI_MCA_pml=ob1
 
-# ✅ Set number of OpenMP threads to match task CPUs
+# ✅ CPU threading
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 
-# ✅ Debug info
+# ✅ GPU check
 nvidia-smi
 python -c "import jax; print('JAX devices:', jax.devices())"
 
-# ✅ Launch 2 tasks, each bound to 1 GPU
+# ✅ Launch one process per GPU, binding 1 GPU each
 srun --gpu-bind=single:1 python -u JAXMPI.py
