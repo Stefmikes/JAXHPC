@@ -2,56 +2,55 @@
 #SBATCH --job-name=JAXHPC
 #SBATCH --partition=dev_gpu_a100_il
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node=2                   # ✔ Keep 1 task per GPU
-#SBATCH --gpus-per-node=2                     # ✔ Using 2 GPUs
+#SBATCH --ntasks-per-node=2             # 1 MPI task per GPU
+#SBATCH --gpus-per-node=2               # Match number of GPUs
+#SBATCH --cpus-per-task=8               # ✅ Pin logical cores per task (adjustable)
 #SBATCH --time=00:30:00
-#SBATCH --mem=8G
+#SBATCH --mem=16G                       # ✅ More memory = better buffer room
 #SBATCH --export=ALL
 
 set -o pipefail
 export PYTHONUNBUFFERED=1
 
-# ✅ Load compatible MPI, CUDA, and Python toolchain
+# ✅ Load compatible modules
 module load lib/hdf5/1.14-gnu-14.2-openmpi-5.0
 module load devel/python/3.11.7-gnu-14.2
 module load devel/cuda/12.8
 
 ENV_DIR=$HOME/gpuMPI_jax_env
 
-# ✅ Install virtual environment and GPU JAX + MPI4PY only once
+# ✅ Environment setup (run once)
 if [ ! -d "$ENV_DIR" ]; then
     python -m venv $ENV_DIR
     source $ENV_DIR/bin/activate
-
     pip install --upgrade pip
-
-    # ✅ Install GPU-compatible JAX (CUDA 12.x)
     pip install --upgrade "jax[cuda12]"
-
-    # ✅ Install mpi4py using system MPI compiler (to link correctly)
     MPICC=mpicc pip install --no-binary=mpi4py mpi4py
-
-    # ✅ Other dependencies
     pip install numpy matplotlib
 else
     source $ENV_DIR/bin/activate
 fi
 
+# ✅ Prevent JAX memory preallocation
 export XLA_PYTHON_CLIENT_PREALLOCATE=false
 
-# ❌ Removed problematic XLA flag
-# export XLA_FLAGS="--xla_gpu_enable_async_collectives=true"
-
-# ✅ Fix CUDA & MPI library paths explicitly
+# ✅ Fix LD_LIBRARY_PATH for CUDA + MPI
 unset LD_LIBRARY_PATH
 export LD_LIBRARY_PATH=$(dirname $(which mpicc))/../lib:$LD_LIBRARY_PATH
 
-# ✅ Suppress UCX and HCOLL warnings
+# ✅ Suppress UCX and HCOLL warnings (cleaner log)
 export OMPI_MCA_coll_hcoll_enable=0
 export OMPI_MCA_pml=ob1
 
+# ✅ Optional: Bind CPU threads to improve locality
+export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
+
+# ✅ Debug info
 nvidia-smi
 python -c "import jax; print('JAX devices:', jax.devices())"
 
-# ✅ Launch with mpirun, using SLURM's task count
-mpirun -np $SLURM_NTASKS python -u JAXMPI.py
+# ✅ Use mpirun with SLURM task count
+mpirun -np $SLURM_NTASKS \
+       --bind-to core \
+       --map-by slot \
+       python -u JAXMPI.py
