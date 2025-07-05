@@ -11,30 +11,37 @@
 set -o pipefail
 export PYTHONUNBUFFERED=1
 
-# Load compatible MPI and CUDA toolchain
+# ✅ Load compatible MPI, CUDA, and Python toolchain
 module load lib/hdf5/1.14-gnu-14.2-openmpi-5.0
 module load devel/python/3.11.7-gnu-14.2
 module load devel/cuda/12.8
 
 ENV_DIR=$HOME/gpuMPI_jax_env
 
-# Install virtual environment and GPU JAX only once
+# ✅ Install virtual environment and GPU JAX + MPI4PY only once
 if [ ! -d "$ENV_DIR" ]; then
     python -m venv $ENV_DIR
     source $ENV_DIR/bin/activate
     pip install --upgrade pip
-    # Install GPU-compatible JAX (CUDA 12.x compatible)
+
+    # ✅ Install GPU-compatible JAX (CUDA 12.x)
     pip install --upgrade "jax[cuda12]"
-    # Additional libraries
-    pip install numpy matplotlib mpi4py  # ✅ Add mpi4py if not already installed
-    unset LD_LIBRARY_PATH
+
+    # ✅ Install mpi4py using system MPI compiler (to link correctly)
+    MPICC=mpicc pip install --no-binary=mpi4py mpi4py
+
+    # ✅ Other dependencies
+    pip install numpy matplotlib
 else
     source $ENV_DIR/bin/activate
-    unset LD_LIBRARY_PATH
 fi
 
-# Optional: check GPU visibility
+# ❌ Do NOT unset LD_LIBRARY_PATH — it breaks MPI linking
+# unset LD_LIBRARY_PATH   <-- This line has been removed
+
+# ✅ Optional: check GPU visibility and devices
 nvidia-smi
 python -c "import jax; print('JAX devices:', jax.devices())"
 
-mpirun -np $SLURM_NTASKS python -u JAXMPI.py  
+# ✅ Launch with mpirun, since you are using mpi4py
+mpirun -np $SLURM_NTASKS python -u JAXMPI.py
