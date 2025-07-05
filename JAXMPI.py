@@ -8,14 +8,14 @@ comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-# Set the visible device to avoid contention
+# ✅ Set visible GPU for this rank BEFORE importing jax
 os.environ["CUDA_VISIBLE_DEVICES"] = str(rank)
 
-# Now import JAX
+# ✅ Now import JAX after setting CUDA visibility
 import jax
 import jax.numpy as jnp
 
-# Verify per-rank GPU assignment
+# 🖥️ Confirm GPU assignment
 print(f"[rank {rank}] Using JAX devices: {jax.devices()}")
 
 # ✅ Domain parameters
@@ -25,7 +25,7 @@ omega = 1.7
 u_max = 0.1
 nu = (1 / omega - 0.5) / 3
 
-# Divide domain along X
+# ✅ Divide domain among ranks (along X)
 assert NX % size == 0
 NXs = NX // size
 
@@ -54,14 +54,15 @@ def stream(g):
               (1,1), (1,-1), (-1,-1), (-1,1)]
     return jnp.stack([jnp.roll(g[i], shift=shifts[i], axis=(0,1)) for i in range(9)])
 
+# ✅ MPI halo exchange
 def mpi_halo(f):
     left = np.array(f[:, 0, :])
     right = np.array(f[:, -1, :])
     left_recv = np.empty_like(left)
     right_recv = np.empty_like(right)
 
-    comm.Sendrecv(right, dest=(rank+1)%size, recvbuf=left_recv, source=(rank-1)%size)
-    comm.Sendrecv(left, dest=(rank-1)%size, recvbuf=right_recv, source=(rank+1)%size)
+    comm.Sendrecv(right, dest=(rank + 1) % size, recvbuf=left_recv, source=(rank - 1) % size)
+    comm.Sendrecv(left, dest=(rank - 1) % size, recvbuf=right_recv, source=(rank + 1) % size)
 
     f = f.at[:, 0, :].set(left_recv)
     f = f.at[:, -1, :].set(right_recv)
@@ -73,7 +74,7 @@ def step_local(f):
     f, _ = collide(f)
     return f
 
-# ✅ Initial condition
+# ✅ Initialize
 x = jnp.arange(NX) + 0.5
 y = jnp.arange(NY) + 0.5
 X, Y = jnp.meshgrid(x, y)
@@ -81,17 +82,17 @@ u0 = u_max * jnp.sin(2 * jnp.pi * Y.T / NY)
 rho0 = jnp.ones((NX, NY), dtype=dtype)
 f0 = np.array(equilibrium(rho0, jnp.array([u0, jnp.zeros_like(u0)])))
 
-# Slice domain for this rank
+# ✅ Extract slice for this rank
 f_loc = f0[:, rank*NXs:(rank+1)*NXs, :]
 
-# ✅ Main time loop
+# ✅ Main loop
 start = time.time()
 for _ in range(NSTEPS):
     f_loc = step_local(f_loc)
     f_loc = mpi_halo(f_loc)
 end = time.time()
 
-# ✅ BLUPS computation
+# ✅ BLUPS calculation
 elapsed = end - start
 total_updates = NX * NY * NSTEPS
 blups = total_updates / elapsed / 1e9
