@@ -39,12 +39,16 @@ fi
 
 export XLA_PYTHON_CLIENT_PREALLOCATE=false
 
-# ❌ REMOVE invalid XLA flag
+# ❌ Removed problematic XLA flag
 # export XLA_FLAGS="--xla_gpu_enable_async_collectives=true"
 
 # ✅ Fix CUDA & MPI library paths explicitly
 unset LD_LIBRARY_PATH
 export LD_LIBRARY_PATH=$(dirname $(which mpicc))/../lib:$LD_LIBRARY_PATH
+
+# ✅ Suppress UCX and HCOLL warnings
+export OMPI_MCA_coll_hcoll_enable=0
+export OMPI_MCA_pml=ob1
 
 nvidia-smi
 python -c "import jax; print('JAX devices:', jax.devices())"
