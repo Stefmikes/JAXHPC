@@ -2,11 +2,11 @@
 #SBATCH --job-name=JAXHPC
 #SBATCH --partition=dev_gpu_a100_il
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node=2             # 1 MPI task per GPU
-#SBATCH --gpus-per-node=2               # Match number of GPUs
-#SBATCH --cpus-per-task=8               # ✅ Pin logical cores per task (adjustable)
+#SBATCH --ntasks=2                         # ✅ Total MPI ranks
+#SBATCH --gpus-per-task=1                  # ✅ 1 GPU per rank
+#SBATCH --cpus-per-task=8                  # ✅ Bind CPU cores
 #SBATCH --time=00:30:00
-#SBATCH --mem=16G                       # ✅ More memory = better buffer room
+#SBATCH --mem=16G
 #SBATCH --export=ALL
 
 set -o pipefail
@@ -19,7 +19,7 @@ module load devel/cuda/12.8
 
 ENV_DIR=$HOME/gpuMPI_jax_env
 
-# ✅ Environment setup (run once)
+# ✅ Create environment if needed
 if [ ! -d "$ENV_DIR" ]; then
     python -m venv $ENV_DIR
     source $ENV_DIR/bin/activate
@@ -38,19 +38,16 @@ export XLA_PYTHON_CLIENT_PREALLOCATE=false
 unset LD_LIBRARY_PATH
 export LD_LIBRARY_PATH=$(dirname $(which mpicc))/../lib:$LD_LIBRARY_PATH
 
-# ✅ Suppress UCX and HCOLL warnings (cleaner log)
+# ✅ Suppress UCX and HCOLL warnings
 export OMPI_MCA_coll_hcoll_enable=0
 export OMPI_MCA_pml=ob1
 
-# ✅ Optional: Bind CPU threads to improve locality
+# ✅ Set number of OpenMP threads to match task CPUs
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 
 # ✅ Debug info
 nvidia-smi
 python -c "import jax; print('JAX devices:', jax.devices())"
 
-# ✅ Use mpirun with SLURM task count
-mpirun -np $SLURM_NTASKS \
-       --bind-to core \
-       --map-by slot \
-       python -u JAXMPI.py
+# ✅ Launch 2 tasks, each bound to 1 GPU
+srun --gpu-bind=single:1 python -u JAXMPI.py
