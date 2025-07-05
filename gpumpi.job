@@ -1,0 +1,40 @@
+#!/bin/bash -x
+#SBATCH --job-name=JAXHPC
+#SBATCH --partition=dev_gpu_a100_il
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1                   # ✔ Keep 1 task per GPU
+#SBATCH --gpus-per-node=1                     # ✔ One GPU per task
+#SBATCH --time=00:30:00
+#SBATCH --mem=8G
+#SBATCH --export=ALL
+
+set -o pipefail
+export PYTHONUNBUFFERED=1
+
+# Load compatible MPI and CUDA toolchain
+module load lib/hdf5/1.14-gnu-14.2-openmpi-5.0
+module load devel/python/3.11.7-gnu-14.2
+module load devel/cuda/12.8
+
+ENV_DIR=$HOME/gpuMPI_jax_env
+
+# Install virtual environment and GPU JAX only once
+if [ ! -d "$ENV_DIR" ]; then
+    python -m venv $ENV_DIR
+    source $ENV_DIR/bin/activate
+    pip install --upgrade pip
+    # Install GPU-compatible JAX (CUDA 12.x compatible)
+    pip install --upgrade "jax[cuda12]"
+    # Additional libraries
+    pip install numpy matplotlib mpi4py  # ✅ Add mpi4py if not already installed
+    unset LD_LIBRARY_PATH
+else
+    source $ENV_DIR/bin/activate
+    unset LD_LIBRARY_PATH
+fi
+
+# Optional: check GPU visibility
+nvidia-smi
+python -c "import jax; print('JAX devices:', jax.devices())"
+
+mpirun -np $SLURM_NTASKS python -u JAXMPI.py  
