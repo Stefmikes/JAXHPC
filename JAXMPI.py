@@ -9,7 +9,7 @@ rank = comm.Get_rank()
 size = comm.Get_size()
 
 local_rank = int(os.environ.get("SLURM_LOCALID", rank))
-os.environ["CUDA_VISIBLE_DEVICES"] = str(local_rank)
+# os.environ["CUDA_VISIBLE_DEVICES"] = str(local_rank)
 
 # ✅ Now import JAX after setting CUDA visibility
 import jax
