@@ -59,11 +59,11 @@ f0 = equilibrium(rho0, u_init).astype(dtype)
 
 # ✅ Main simulation
 with mesh:
-    # Partition only the x-dimension (first dim of f0)
-    sharding = NamedSharding(mesh, P('x', None, None))
+    # ❗ Correct sharding: do NOT shard the LBM direction (axis 0), shard NX (axis 1)
+    sharding = NamedSharding(mesh, P(None, 'x', None))
     f = jax.device_put(f0, sharding)
 
-    @pjit(in_shardings=P('x', None, None), out_shardings=P('x', None, None))
+    @pjit(in_shardings=P(None, 'x', None), out_shardings=P(None, 'x', None))
     def lbm_step(f):
         f = stream(f)
         f, _ = collide(f)
