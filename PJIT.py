@@ -1,4 +1,5 @@
 import time
+import math
 import jax
 import jax.numpy as jnp
 from jax.experimental import mesh_utils
@@ -14,7 +15,7 @@ for i, d in enumerate(all_devices):
     print(f"  Device {i}: {d}")
 
 # ✅ Domain setup
-NX, NY = 8000, 8000 
+NX, NY = 8000, 8000
 NSTEPS = 10000
 omega = 1.7
 u_max = 0.1
@@ -53,36 +54,37 @@ v0 = jnp.zeros_like(u0)
 u_init = jnp.array([u0, v0])
 f0 = equilibrium(rho0, u_init).astype(dtype)
 
-# ✅ Run simulation
 if num_devices > 1:
-    # Multi-device GPU setup with mesh and pjit
-    mesh_shape = (num_devices,)
-    devices = mesh_utils.create_device_mesh(mesh_shape)
-    mesh = Mesh(devices, axis_names=('x',))
+    # Determine 2D mesh shape (px, py) trying to get close to square layout
+    px = int(math.floor(math.sqrt(num_devices)))
+    while num_devices % px != 0:
+        px -= 1
+    py = num_devices // px
+    print(f"Using 2D mesh shape: ({px}, {py})")
+
+    devices = mesh_utils.create_device_mesh((px, py))
+    mesh = Mesh(devices, axis_names=('x', 'y'))
 
     with mesh:
-        # Shard the NX dimension
-        sharding = NamedSharding(mesh, P(None, 'x', None))
+        # Shard NX by 'x', NY by 'y', direction dim unsharded (None)
+        sharding = NamedSharding(mesh, P(None, 'x', 'y'))
         f = jax.device_put(f0, sharding)
 
+        @pjit(
+            in_shardings=P(None, 'x', 'y'),
+            out_shardings=P(None, 'x', 'y')
+        )
         def lbm_step(f):
             f = stream(f)
             f, _ = collide(f)
             return f
 
-        lbm_step = pjit(
-            lbm_step,
-            in_shardings=P(None, 'x', None),
-            out_shardings=P(None, 'x', None)
-        )
-
         start = time.time()
         for _ in range(NSTEPS):
             f = lbm_step(f)
         end = time.time()
-
 else:
-    # Fallback for single device (CPU or single GPU)
+    # Single device fallback
     f = f0
 
     def lbm_step(f):
