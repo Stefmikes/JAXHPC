@@ -3,7 +3,7 @@
 #SBATCH --partition=dev_gpu_a100_il
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1                   # ✔ Keep 1 task per GPU
-#SBATCH --gpus-per-node=1                     # ✔ One GPU per task
+#SBATCH --gpus-per-node=2                     # ✔ Using 2 GPUs
 #SBATCH --time=00:30:00
 #SBATCH --mem=8G
 #SBATCH --export=ALL
@@ -36,12 +36,14 @@ else
     source $ENV_DIR/bin/activate
 fi
 
-# ❌ Do NOT unset LD_LIBRARY_PATH — it breaks MPI linking
-# unset LD_LIBRARY_PATH   <-- This line has been removed
+# ✅ Fix CUDA & MPI library paths explicitly
+export LD_LIBRARY_PATH=$(dirname $(which mpicc))/../lib:$LD_LIBRARY_PATH
+export LD_LIBRARY_PATH=${CUDA_HOME:-/opt/cuda-12.8}/lib64:$LD_LIBRARY_PATH
 
-# ✅ Optional: check GPU visibility and devices
+# ✅ Optional: confirm environment setup
+echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH"
 nvidia-smi
 python -c "import jax; print('JAX devices:', jax.devices())"
 
-# ✅ Launch with mpirun, since you are using mpi4py
+# ✅ Launch with mpirun, using SLURM's task count
 mpirun -np $SLURM_NTASKS python -u JAXMPI.py
