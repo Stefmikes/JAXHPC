@@ -8,8 +8,7 @@ comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-local_rank = int(os.environ.get("OMPI_COMM_WORLD_LOCAL_RANK", rank))  # fallback to rank
-
+local_rank = int(os.environ.get("SLURM_LOCALID", rank))
 os.environ["CUDA_VISIBLE_DEVICES"] = str(local_rank)
 
 # ✅ Now import JAX after setting CUDA visibility
