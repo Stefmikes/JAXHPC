@@ -3,12 +3,13 @@ import jax
 import jax.numpy as jnp
 from jax.experimental import mesh_utils
 from jax.sharding import Mesh, PartitionSpec as P, NamedSharding
-from jax.experimental.pjit import pjit
+from jax.experimental.pjit import pjit as pjit_fn
 
 # ✅ Log platform and available devices
 print(f"JAX platform: {jax.default_backend()}")
 all_devices = jax.devices()
-print(f"JAX is using {len(all_devices)} devices:")
+num_devices = len(all_devices)
+print(f"JAX is using {num_devices} device(s):")
 for i, d in enumerate(all_devices):
     print(f"  Device {i}: {d}")
 
@@ -23,11 +24,6 @@ nu = (1 / omega - 0.5) / 3
 dtype = jnp.float32
 w = jnp.array([4/9,1/9,1/9,1/9,1/9,1/36,1/36,1/36,1/36], dtype)
 c = jnp.array([[0,1,0,-1,0,1,-1,-1,1], [0,0,1,0,-1,1,1,-1,-1]], dtype)
-
-# ✅ Setup JAX Mesh over all devices
-mesh_shape = (len(all_devices),)  # 1D mesh
-devices = mesh_utils.create_device_mesh(mesh_shape)
-mesh = Mesh(devices, axis_names=('x',))  # axis name 'x' for sharding
 
 # ✅ Lattice functions
 def equilibrium(rho, u):
@@ -57,19 +53,38 @@ v0 = jnp.zeros_like(u0)
 u_init = jnp.array([u0, v0])
 f0 = equilibrium(rho0, u_init).astype(dtype)
 
-# ✅ Main simulation
-with mesh:
-    # ❗ Correct sharding: do NOT shard the LBM direction (axis 0), shard NX (axis 1)
-    sharding = NamedSharding(mesh, P(None, 'x', None))
-    f = jax.device_put(f0, sharding)
+# ✅ Run simulation
+if num_devices > 1:
+    # Multi-device GPU setup with mesh and pjit
+    mesh_shape = (num_devices,)
+    devices = mesh_utils.create_device_mesh(mesh_shape)
+    mesh = Mesh(devices, axis_names=('x',))
 
-    @pjit(in_shardings=P(None, 'x', None), out_shardings=P(None, 'x', None))
+    with mesh:
+        # Shard the NX dimension
+        sharding = NamedSharding(mesh, P(None, 'x', None))
+        f = jax.device_put(f0, sharding)
+
+        @pjit_fn(in_shardings=P(None, 'x', None), out_shardings=P(None, 'x', None))
+        def lbm_step(f):
+            f = stream(f)
+            f, _ = collide(f)
+            return f
+
+        start = time.time()
+        for _ in range(NSTEPS):
+            f = lbm_step(f)
+        end = time.time()
+
+else:
+    # Fallback for single device (CPU or single GPU)
+    f = f0
+
     def lbm_step(f):
         f = stream(f)
         f, _ = collide(f)
         return f
 
-    # ✅ Run main loop
     start = time.time()
     for _ in range(NSTEPS):
         f = lbm_step(f)
@@ -80,7 +95,7 @@ elapsed = end - start
 total_updates = NX * NY * NSTEPS
 blups = total_updates / elapsed / 1e9
 
-print(f"\n✅ Ran on {len(all_devices)} GPUs: {blups:.3f} BLUPS")
+print(f"\n✅ Ran on {num_devices} device(s): {blups:.3f} BLUPS")
 print(f"⏱️  Elapsed time: {elapsed:.2f} seconds")
 print(f"📐 Domain size: NX={NX}, NY={NY}")
 print(f"🔁 Number of steps: {NSTEPS}")
