@@ -9,7 +9,7 @@ rank = comm.Get_rank()
 size = comm.Get_size()
 
 # ✅ Set visible GPU for this rank BEFORE importing jax
-os.environ["CUDA_VISIBLE_DEVICES"] = str(rank)
+# os.environ["CUDA_VISIBLE_DEVICES"] = str(rank)
 
 # ✅ Now import JAX after setting CUDA visibility
 import jax
