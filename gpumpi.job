@@ -55,9 +55,14 @@ export JAX_NUM_PROCESSES=$SLURM_NTASKS
 export JAX_COORDINATOR_ADDRESS=$(scontrol show hostname $SLURM_NODELIST | head -n 1):1234
 
 # ✅ Launch script via MPI
-mpirun -np $SLURM_NTASKS --bind-to none --map-by slot \
-    -x PATH -x LD_LIBRARY_PATH -x PYTHONPATH \
-    -x JAX_NUM_PROCESSES -x JAX_COORDINATOR_ADDRESS \
-    -x NCCL_DEBUG=INFO -x CUDA_VISIBLE_DEVICES \
-    -x XLA_PYTHON_CLIENT_PREALLOCATE \
+mpirun -np 4 \
+  --bind-to none --map-by slot \
+  -x PATH -x LD_LIBRARY_PATH -x PYTHONPATH \
+  -x NCCL_DEBUG=INFO -x XLA_PYTHON_CLIENT_PREALLOCATE=false \
+  -x JAX_NUM_PROCESSES -x JAX_COORDINATOR_ADDRESS \
+  --mca plm_rsh_no_tree_spawn 1 \
+  bash -c '
+    export CUDA_VISIBLE_DEVICES=$OMPI_COMM_WORLD_RANK
     python JAXMPI.py
+  '
+
