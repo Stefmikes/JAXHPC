@@ -16,26 +16,20 @@ comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-import jax.distributed
-jax.distributed.initialize()
-
-print(f"Process {jax.process_index()} / {jax.process_count()} sees devices: {jax.devices()}")
-
-
 # ✅ JAX Distributed Environment Setup
-# coordinator = os.environ.get("JAX_COORDINATOR_ADDRESS", "localhost:1234")
-# os.environ["JAX_PROCESS_ID"] = str(rank)
-# os.environ["JAX_NUM_PROCESSES"] = str(size)
-# os.environ["JAX_COORDINATOR"] = coordinator
+coordinator = os.environ.get("JAX_COORDINATOR_ADDRESS", "localhost:1234")
+os.environ["JAX_PROCESS_ID"] = str(rank)
+os.environ["JAX_NUM_PROCESSES"] = str(size)
+os.environ["JAX_COORDINATOR"] = coordinator
 
-# if size > 1 and "JAX_DIST_INITIALIZED" not in os.environ:
-#     from jax import distributed
-#     distributed.initialize(
-#         coordinator_address=coordinator,
-#         num_processes=size,
-#         process_id=rank
-#     )
-#     os.environ["JAX_DIST_INITIALIZED"] = "1"
+if size > 1 and "JAX_DIST_INITIALIZED" not in os.environ:
+    from jax import distributed
+    distributed.initialize(
+        coordinator_address=coordinator,
+        num_processes=size,
+        process_id=rank
+    )
+    os.environ["JAX_DIST_INITIALIZED"] = "1"
 
 # ✅ Log device and environment info
 print("Starting JAX PJIT simulation...")
