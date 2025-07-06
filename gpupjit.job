@@ -38,5 +38,10 @@ unset LD_LIBRARY_PATH
 nvidia-smi
 python -c "import jax; print('JAX devices:', jax.devices())"
 
+# ✅ Set JAX distributed variables for single-process mode
+export JAX_COORDINATOR=localhost:1234
+export JAX_NUM_PROCESSES=1
+export JAX_PROCESS_ID=0
+
 # ✅ Run your multi-GPU PJIT simulation with one process
 python PJIT.py

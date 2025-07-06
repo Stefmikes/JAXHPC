@@ -1,10 +1,24 @@
 import time
 import math
+import os
 import jax
 import jax.numpy as jnp
 from jax.experimental import mesh_utils
 from jax.sharding import Mesh, PartitionSpec as P, NamedSharding
 from jax.experimental.pjit import pjit
+
+# ✅ Distributed initialization (multi-host)
+if "JAX_DIST_INITIALIZED" not in os.environ:
+    from jax import distributed
+    coordinator = os.environ.get("JAX_COORDINATOR", "localhost:1234")
+    num_processes = int(os.environ.get("JAX_NUM_PROCESSES", "1"))
+    process_id = int(os.environ.get("JAX_PROCESS_ID", "0"))
+    distributed.initialize(
+        coordinator_address=coordinator,
+        num_processes=num_processes,
+        process_id=process_id
+    )
+    os.environ["JAX_DIST_INITIALIZED"] = "1"
 
 # ✅ Log platform and available devices
 print(f"JAX platform: {jax.default_backend()}")
