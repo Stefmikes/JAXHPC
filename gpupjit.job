@@ -2,7 +2,7 @@
 #SBATCH --job-name=JAXHPC
 #SBATCH --partition=gpu_a100_il
 #SBATCH --nodes=2
-#SBATCH --ntasks-per-node=1               # ✅ Only 1 task
+#SBATCH --ntasks-per-node=1               # ✅ Only 1 task per node
 #SBATCH --gpus-per-node=4                 # ✅ Use all 4 GPUs in a single process
 #SBATCH --time=00:30:00
 #SBATCH --mem=16G
@@ -36,6 +36,10 @@ unset LD_LIBRARY_PATH
 
 # ✅ GPU check
 nvidia-smi
+
+# ======= Highlighted change: Unset CUDA_VISIBLE_DEVICES to expose all GPUs to this single task =======
+unset CUDA_VISIBLE_DEVICES
+
 python -c "import jax; print('JAX devices:', jax.devices())"
 
 # ✅ Determine coordinator hostname (first node in allocation)
