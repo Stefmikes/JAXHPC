@@ -126,7 +126,7 @@ with mesh:
             rho = jnp.einsum('ijk->jk', f)
             u = jnp.einsum('ai,ixy->axy', c, f) / rho
 
-            u_np = np.array(u)
+            u_np = jax.device_get(u.block_until_ready())
             all_shards = comm.gather(u_np, root=0)
 
             if rank == 0:
@@ -135,9 +135,9 @@ with mesh:
                 # ✅ FIXED: Reshape u_gathered into 2D shard layout
                 try:
                    # Reconstruct mesh layout from gathered full replicas
-                    assert len(all_shards) == size , f"Expected {px*py} shards, got {len(u_np)}"
+                    assert len(all_shards) == size , f"Expected {px*py} shards, got {len(all_shards)}"
 
-                    shards_2d = [u_np[i * py:(i + 1) * py] for i in range(px)]
+                    shards_2d = [all_shards[i * py:(i + 1) * py] for i in range(px)]
                     rows = [jnp.concatenate(row, axis=2) for row in shards_2d]  # concatenate over Y
                     u_combined = jnp.concatenate(rows, axis=1)  # concatenate over X
 
