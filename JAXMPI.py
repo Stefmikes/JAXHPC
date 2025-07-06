@@ -40,7 +40,7 @@ print(f"Process {jax.process_index()} on {socket.gethostname()} using {jax.local
 print(f"JAX backend: {jax.default_backend()}")
 
 # ✅ Simulation parameters
-NX, NY = 4000, 4000
+NX, NY = 4000, 6000
 NSTEPS = 10000
 omega = 1.7
 u_max = 0.1
@@ -131,7 +131,14 @@ with mesh:
                 print(f"Shape of u_gathered[{i}]: {arr.shape}")
             
             if rank == 0:
-                u_combined = jnp.concatenate(u_gathered, axis=2)  # Assuming sharding along 'y'
+                # Reshape u_gathered list to 2D grid of shards (px rows, py cols)
+                shards_2d = [u_gathered[i*py:(i+1)*py] for i in range(px)]
+
+                # Concatenate shards in each row along y-axis (axis=2)
+                rows = [jnp.concatenate(row_shards, axis=2) for row_shards in shards_2d]
+
+                # Concatenate rows along x-axis (axis=1)
+                u_combined = jnp.concatenate(rows, axis=1)
                 u_host = np.array(u_combined[0])  # Extract u_x component
 
                 amp.append(u_host[NX // 2, NY // 8])
