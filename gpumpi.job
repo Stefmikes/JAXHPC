@@ -50,5 +50,14 @@ python -c "import jax; print('JAX devices:', jax.devices())"
 
 echo "Local rank: $SLURM_LOCALID"
 echo "CUDA_VISIBLE_DEVICES before mpirun: $CUDA_VISIBLE_DEVICES"
+# ✅ Ensure environment variables for distributed JAX
+export JAX_NUM_PROCESSES=$SLURM_NTASKS
+export JAX_COORDINATOR_ADDRESS=$(scontrol show hostname $SLURM_NODELIST | head -n 1):1234
 
-mpirun -np $SLURM_NTASKS ./launch_jax.sh
+# ✅ Launch script via MPI
+mpirun -np $SLURM_NTASKS --bind-to none --map-by slot \
+    -x PATH -x LD_LIBRARY_PATH -x PYTHONPATH \
+    -x JAX_NUM_PROCESSES -x JAX_COORDINATOR_ADDRESS \
+    -x NCCL_DEBUG=INFO -x CUDA_VISIBLE_DEVICES \
+    -x XLA_PYTHON_CLIENT_PREALLOCATE \
+    python JAXMPI.py

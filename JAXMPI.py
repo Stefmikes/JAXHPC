@@ -1,40 +1,56 @@
-from mpi4py import MPI
-import os
-import numpy as np
 import time
+import math
+import os
+import socket
+import jax
+import jax.numpy as jnp
+from jax.experimental import mesh_utils
+from jax.sharding import Mesh, PartitionSpec as P, NamedSharding
+from jax.experimental.pjit import pjit
 
-# 🚀 Bind each MPI rank to a unique GPU before importing JAX
+# ✅ Distributed initialization using MPI
+from mpi4py import MPI
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-local_rank = int(os.environ.get("SLURM_LOCALID", rank))
-# os.environ["CUDA_VISIBLE_DEVICES"] = str(local_rank)
+# 🔧 MODIFIED: Use consistent env variable for coordinator address
+coordinator = os.environ.get("JAX_COORDINATOR_ADDRESS", "localhost:1234")  # 🔧 CHANGED
+os.environ["JAX_PROCESS_ID"] = str(rank)
+os.environ["JAX_NUM_PROCESSES"] = str(size)
+os.environ["JAX_COORDINATOR"] = coordinator
 
-# ✅ Now import JAX after setting CUDA visibility
-import jax
-import jax.numpy as jnp
+# ✅ ADDED: Initialize distributed JAX early
+if size > 1 and "JAX_DIST_INITIALIZED" not in os.environ:
+    from jax import distributed
+    distributed.initialize(
+        coordinator_address=coordinator,  # 🔧 MODIFIED
+        num_processes=size,
+        process_id=rank
+    )
+    os.environ["JAX_DIST_INITIALIZED"] = "1"
 
-# 🖥️ Confirm GPU assignment
-print(f"[rank {rank}] Using JAX devices: {jax.devices()}")
+# ✅ Log hardware
+print("Starting JAX PJIT simulation...")
+print(f"Rank: {rank}, Size: {size}")
+print(f"CUDA_VISIBLE_DEVICES: {os.environ.get('CUDA_VISIBLE_DEVICES')}")
+print("All visible devices:", jax.devices())
+print("Local devices:", jax.local_devices())
+print(f"JAX process {jax.process_index()} out of {jax.process_count()} is running on host {socket.gethostname()} with devices: {jax.local_devices()}")
+print(f"JAX platform: {jax.default_backend()}")
 
-# ✅ Domain parameters
-NX, NY = 400, 300
+# ✅ Simulation parameters
+NX, NY = 80, 80
 NSTEPS = 10000
 omega = 1.7
 u_max = 0.1
 nu = (1 / omega - 0.5) / 3
 
-# ✅ Divide domain among ranks (along X)
-assert NX % size == 0
-NXs = NX // size
-
-# ✅ Lattice weights and directions
+# ✅ Lattice parameters
 dtype = jnp.float32
 w = jnp.array([4/9,1/9,1/9,1/9,1/9,1/36,1/36,1/36,1/36], dtype)
 c = jnp.array([[0,1,0,-1,0,1,-1,-1,1], [0,0,1,0,-1,1,1,-1,-1]], dtype)
 
-# ✅ Lattice routines
 @jax.jit
 def equilibrium(rho, u):
     cdot3u = 3 * jnp.einsum('ai,axy->ixy', c, u)
@@ -49,61 +65,63 @@ def collide(g):
     feq = equilibrium(rho, u)
     return g + omega * (feq - g), u
 
+@jax.jit
 def stream(g):
     shifts = [(0,0), (0,1), (1,0), (0,-1), (-1,0),
               (1,1), (1,-1), (-1,-1), (-1,1)]
     return jnp.stack([jnp.roll(g[i], shift=shifts[i], axis=(0,1)) for i in range(9)])
 
-# ✅ MPI halo exchange
-def mpi_halo(f):
-    left = np.array(f[:, 0, :])
-    right = np.array(f[:, -1, :])
-    left_recv = np.empty_like(left)
-    right_recv = np.empty_like(right)
-
-    comm.Sendrecv(right, dest=(rank + 1) % size, recvbuf=left_recv, source=(rank - 1) % size)
-    comm.Sendrecv(left, dest=(rank - 1) % size, recvbuf=right_recv, source=(rank + 1) % size)
-
-    f = f.at[:, 0, :].set(left_recv)
-    f = f.at[:, -1, :].set(right_recv)
-    return f
-
-@jax.jit
-def step_local(f):
-    f = stream(f)
-    f, _ = collide(f)
-    return f
-
-# ✅ Initialize
+# ✅ Initialize grid
 x = jnp.arange(NX) + 0.5
 y = jnp.arange(NY) + 0.5
-X, Y = jnp.meshgrid(x, y)
-u0 = u_max * jnp.sin(2 * jnp.pi * Y.T / NY)
+X, Y = jnp.meshgrid(x, y, indexing='ij')
+u0 = u_max * jnp.sin(2 * jnp.pi * Y / NY)
 rho0 = jnp.ones((NX, NY), dtype=dtype)
-f0 = np.array(equilibrium(rho0, jnp.array([u0, jnp.zeros_like(u0)])))
+v0 = jnp.zeros_like(u0)
+u_init = jnp.array([u0, v0])
+f0 = equilibrium(rho0, u_init).astype(dtype)
 
-# ✅ Extract slice for this rank
-f_loc = f0[:, rank*NXs:(rank+1)*NXs, :]
+# ✅ Set up sharding across all devices (multi-process)
+devices = jax.devices()
+num_devices = len(devices)
+px = int(math.floor(math.sqrt(num_devices)))
+while num_devices % px != 0:
+    px -= 1
+py = num_devices // px
+print(f" Using 2D mesh shape: ({px}, {py})")
 
-# ✅ Main loop
-start = time.time()
-for _ in range(NSTEPS):
-    f_loc = step_local(f_loc)
-    f_loc = mpi_halo(f_loc)
-end = time.time()
+mesh = Mesh(mesh_utils.create_device_mesh((px, py)), axis_names=('x', 'y'))
 
-# ✅ BLUPS calculation
+with mesh:
+    sharding = NamedSharding(mesh, P(None, 'x', 'y'))
+    f = jax.device_put(f0, sharding)
+
+    def lbm_step(f):
+        f = stream(f)
+        f, _ = collide(f)
+        return f
+
+    lbm_step = pjit(
+        lbm_step,
+        in_shardings=P(None, 'x', 'y'),
+        out_shardings=P(None, 'x', 'y'),
+    )
+
+    print(" Effective sharding of `f`: ", f.sharding)
+    print(" `f` array is sharded across:", f.devices())
+
+    start = time.time()
+    for _ in range(NSTEPS):
+        f = lbm_step(f)
+    end = time.time()
+
+# ✅ Performance metrics
 elapsed = end - start
 total_updates = NX * NY * NSTEPS
 blups = total_updates / elapsed / 1e9
 
-total_blups = comm.reduce(blups, op=MPI.SUM, root=0)
-
-if rank == 0:
-    print(f"Ran on {size} GPUs: {total_blups:.3f} BLUPS")
-    print(f"Elapsed time: {elapsed:.2f} seconds")
-    print(f"Domain size: NX={NX}, NY={NY}")
-    print(f"Number of steps: {NSTEPS}")
-    print(f"Omega: {omega}, Viscosity: {nu:.4e}")
-
-MPI.Finalize()
+print(f"\n Rank {rank}: Ran on {num_devices} device(s): {blups:.3f} BLUPS")
+print(f"  Elapsed time: {elapsed:.2f} seconds")
+print(f" Domain size: NX={NX}, NY={NY}")
+print(f" Number of steps: {NSTEPS}")
+print(f"  Omega: {omega}, Viscosity: {nu:.4e}")
