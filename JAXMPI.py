@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 from jax.experimental import mesh_utils
 from jax.sharding import Mesh, PartitionSpec as P, NamedSharding
 from jax.experimental.pjit import pjit
+from jax.experimental.multihost_utils import process_allgather  # ✅ NEW
 from mpi4py import MPI
 
 # ✅ MPI Initialization
@@ -71,7 +72,6 @@ shifts = [(int(c[0, i]), int(c[1, i])) for i in range(9)]
 
 @jax.jit
 def stream(g):
-    # Use precomputed shifts, no int() call here!
     return jnp.stack([jnp.roll(g[i], shift=shifts[i], axis=(0,1)) for i in range(9)])
 
 # ✅ Initialize domain
@@ -113,30 +113,36 @@ with mesh:
 
     print("Sharding info:", f.sharding)
 
-    amp = []  # ✅ Store amplitude measurements
+    amp = []
+    profiles = []
+    os.makedirs("frames", exist_ok=True)
 
     start = time.time()
-
-    profiles = []
-    os.makedirs("frames", exist_ok=True) 
 
     for step in range(NSTEPS):
         f = lbm_step(f)
         if step % 200 == 0:
             rho = jnp.einsum('ijk->jk', f)
             u = jnp.einsum('ai,ixy->axy', c, f) / rho
-            u_host = np.array(u[0])  # u_x on CPU
-            amp.append(u_host[NX // 2, NY // 8])
-            profile = u_host[NX // 2, :].copy()
-            profiles.append(profile)
+
+            # ✅ NEW: Safely gather u from all processes
+            u_gathered = process_allgather(u)
 
             if rank == 0:
+                # ✅ Assuming sharding on 'y', concatenate along axis=2
+                u_combined = jnp.concatenate(u_gathered, axis=2)
+                u_host = np.array(u_combined[0])  # u_x component
+
+                amp.append(u_host[NX // 2, NY // 8])
+                profile = u_host[NX // 2, :].copy()
+                profiles.append(profile)
+
                 plt.figure()
                 plt.plot(profile)
                 plt.title(f'Wave profile at step {step}')
                 plt.xlabel('y')
                 plt.ylabel('u_x Amplitude')
-                plt.ylim(-u_max, u_max)  # Fixed axis scale
+                plt.ylim(-u_max, u_max)
                 plt.grid(True)
                 plt.tight_layout()
                 plt.savefig(f'frames/frame_{step:05d}.png')
@@ -160,7 +166,6 @@ if rank == 0:
     amp = np.array(amp)
     profiles = np.array(profiles)
 
-    # Plot all collected profiles
     plt.figure()
     for profile in profiles:
         plt.plot(profile)
@@ -171,17 +176,16 @@ if rank == 0:
     plt.tight_layout()
     plt.show()
 
-    # Plot amplitude decay
     plt.figure()
     plt.plot(amp / amp[0])
     plt.title('Amplitude decay at (NX/2, NY/8)')
-    plt.xlabel('Timestep index (every 100 steps)')
+    plt.xlabel('Timestep index (every 200 steps)')
     plt.ylabel('Relative Amplitude')
     plt.grid(True)
     plt.tight_layout()
     plt.show()
 
-    # Create GIF
+    # ✅ Create GIF
     import imageio
     with imageio.get_writer('wave_decay.gif', mode='I', duration=0.1) as writer:
         for step in range(0, NSTEPS, 200):
