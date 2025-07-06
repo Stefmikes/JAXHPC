@@ -125,8 +125,9 @@ with mesh:
             rho = jnp.einsum('ijk->jk', f)
             u = jnp.einsum('ai,ixy->axy', c, f) / rho
 
-            # ✅ Gather full u from all processes before slicing
-            u_gathered = multihost_utils.process_allgather(u)
+            u_local = jax.device_get(u)  # Move sharded array to host (replicates the whole u locally)
+            u_gathered = multihost_utils.process_allgather(u_local)
+
             for i, arr in enumerate(u_gathered):
                 print(f"Shape of u_gathered[{i}]: {arr.shape}")
             
@@ -135,9 +136,16 @@ with mesh:
                 print(f"Mesh shape: px={px}, py={py}, total={px * py}")
                 # ✅ FIXED: Reshape u_gathered into 2D shard layout
                 try:
-                    u_combined = jnp.concatenate(u_gathered, axis=0)  # Try rows first
-                    if u_combined.shape[0] != NX:
-                        u_combined = jnp.concatenate(u_gathered, axis=1)  # Try cols
+                   # Reconstruct mesh layout from gathered full replicas
+                    assert len(u_gathered) == px * py, f"Expected {px*py} shards, got {len(u_gathered)}"
+
+                    shards_2d = [u_gathered[i * py:(i + 1) * py] for i in range(px)]
+                    rows = [jnp.concatenate(row, axis=2) for row in shards_2d]  # concatenate over Y
+                    u_combined = jnp.concatenate(rows, axis=1)  # concatenate over X
+
+                    # Final shape: (2, NX, NY)
+                    u_combined = jnp.reshape(u_combined, (2, NX, NY))
+
                 except Exception as e:
                     print("Concatenation failed:", e)
                     print("Number of gathered shards:", len(u_gathered))
