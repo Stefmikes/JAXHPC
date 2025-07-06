@@ -20,6 +20,9 @@ if "JAX_DIST_INITIALIZED" not in os.environ:
     )
     os.environ["JAX_DIST_INITIALIZED"] = "1"
 
+import socket
+print(f"🚀 JAX process {jax.process_index()} out of {jax.process_count()} is running on host {socket.gethostname()} with devices: {jax.local_devices()}")
+
 # ✅ Log platform and available devices
 print(f"JAX platform: {jax.default_backend()}")
 all_devices = jax.devices()

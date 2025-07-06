@@ -38,12 +38,16 @@ unset LD_LIBRARY_PATH
 nvidia-smi
 python -c "import jax; print('JAX devices:', jax.devices())"
 
-# ✅ Multi-process JAX distributed setup from SLURM
+# ✅ Determine coordinator hostname (first node in allocation)
+COORD_HOST=$(scontrol show hostnames $SLURM_NODELIST | head -n 1)
+
+# ✅ Launch 1 JAX process per node via `srun`
+srun --ntasks=$SLURM_NNODES --nodes=$SLURM_NNODES bash -c '
+export PYTHONUNBUFFERED=1
+export JAX_COORDINATOR='"$COORD_HOST"':1234
 export JAX_NUM_PROCESSES=$SLURM_NNODES
 export JAX_PROCESS_ID=$SLURM_PROCID
 
-# ✅ Coordinator: Use hostname of first node
-COORD_HOST=$(scontrol show hostnames "$SLURM_NODELIST" | head -n 1)
-export JAX_COORDINATOR="$COORD_HOST:1234"
-# ✅ Run your multi-GPU PJIT simulation with one process
+echo "🔁 Starting JAX process $JAX_PROCESS_ID on $(hostname)..."
 python JD_PJIT.py
+'
