@@ -44,4 +44,4 @@ export JAX_NUM_PROCESSES=1
 export JAX_PROCESS_ID=0
 
 # ✅ Run your multi-GPU PJIT simulation with one process
-python PJIT.py
+python JD_PJIT.py
