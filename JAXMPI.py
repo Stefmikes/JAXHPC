@@ -131,15 +131,19 @@ with mesh:
                 print(f"Shape of u_gathered[{i}]: {arr.shape}")
             
             if rank == 0:
-                # Reshape u_gathered list to 2D grid of shards (px rows, py cols)
-                shards_2d = [u_gathered[i*py:(i+1)*py] for i in range(px)]
+                # ✅ FIXED: Reshape u_gathered into 2D shard layout
+                shards_2d = [u_gathered[i * py:(i + 1) * py] for i in range(px)]
 
-                # Concatenate shards in each row along y-axis (axis=2)
-                rows = [jnp.concatenate(row_shards, axis=2) for row_shards in shards_2d]
+                # ✅ FIXED: First stack each list of 2D arrays into 3D arrays, then concatenate
+                rows = [jnp.concatenate([jnp.expand_dims(shard, axis=0) for shard in row_shards], axis=0) for row_shards in shards_2d]
 
-                # Concatenate rows along x-axis (axis=1)
+                # ✅ Now concatenate rows along axis=1 (NX axis)
                 u_combined = jnp.concatenate(rows, axis=1)
-                u_host = np.array(u_combined[0])  # Extract u_x component
+
+                # ✅ Extract u_x (component 0) from 3D array of shape (px * py, NX, NY)
+                # If necessary, reshape to final shape (2, NX, NY) based on how original data was stored
+                u_combined = jnp.reshape(u_combined, (2, NX, NY))  # <-- final corrected shape
+                u_host = np.array(u_combined[0])  # u_x
 
                 amp.append(u_host[NX // 2, NY // 8])
                 profile = u_host[NX // 2, :].copy()
