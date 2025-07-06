@@ -131,7 +131,21 @@ with mesh:
                 print(f"Shape of u_gathered[{i}]: {arr.shape}")
             
             if rank == 0:
+                print(f"Gathered {len(u_gathered)} shards")
+                print(f"Mesh shape: px={px}, py={py}, total={px * py}")
                 # ✅ FIXED: Reshape u_gathered into 2D shard layout
+                try:
+                    u_combined = jnp.concatenate(u_gathered, axis=0)  # Try rows first
+                    if u_combined.shape[0] != NX:
+                        u_combined = jnp.concatenate(u_gathered, axis=1)  # Try cols
+                except Exception as e:
+                    print("Concatenation failed:", e)
+                    print("Number of gathered shards:", len(u_gathered))
+                    for i, arr in enumerate(u_gathered):
+                        print(f"Shard {i}: shape={arr.shape}")
+                    raise
+
+                
                 shards_2d = [u_gathered[i * py:(i + 1) * py] for i in range(px)]
 
                 # ✅ FIXED: First stack each list of 2D arrays into 3D arrays, then concatenate
