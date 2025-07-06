@@ -1,11 +1,19 @@
 import time
 import math
 import os
+print("🚀 Starting JAX PJIT simulation...")
+print(f"🧪 CUDA_VISIBLE_DEVICES: {os.environ.get('CUDA_VISIBLE_DEVICES')}")
+
+
 import jax
 import jax.numpy as jnp
 from jax.experimental import mesh_utils
 from jax.sharding import Mesh, PartitionSpec as P, NamedSharding
 from jax.experimental.pjit import pjit
+
+print("🧪 All visible devices:", jax.devices())
+print("🧪 Local devices:", jax.local_devices())
+
 
 # ✅ Distributed initialization (multi-host)
 if "JAX_DIST_INITIALIZED" not in os.environ:

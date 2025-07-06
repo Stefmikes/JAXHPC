@@ -37,7 +37,7 @@ unset LD_LIBRARY_PATH
 # ✅ GPU check
 nvidia-smi
 
-# ======= Highlighted change: Unset CUDA_VISIBLE_DEVICES to expose all GPUs to this single task =======
+# ✅ Unset CUDA_VISIBLE_DEVICES to expose all GPUs to the task
 unset CUDA_VISIBLE_DEVICES
 
 python -c "import jax; print('JAX devices:', jax.devices())"
@@ -46,7 +46,12 @@ python -c "import jax; print('JAX devices:', jax.devices())"
 COORD_HOST=$(scontrol show hostnames $SLURM_NODELIST | head -n 1)
 
 # ✅ Launch 1 JAX process per node via `srun`
-srun --ntasks=$SLURM_NNODES --nodes=$SLURM_NNODES bash -c '
+# ======= ✅ Highlighted Fix: Ensure each task sees all 4 GPUs =======
+srun --ntasks=$SLURM_NNODES \
+     --nodes=$SLURM_NNODES \
+     --gpus-per-task=4 \
+     --export=ALL,CUDA_VISIBLE_DEVICES \
+     bash -c '
 export PYTHONUNBUFFERED=1
 export JAX_COORDINATOR='"$COORD_HOST"':1234
 export JAX_NUM_PROCESSES=$SLURM_NNODES
