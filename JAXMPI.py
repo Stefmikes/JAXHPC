@@ -147,23 +147,12 @@ with mesh:
 
                 except Exception as e:
                     print("Concatenation failed:", e)
-                    print("Number of gathered shards:", len(u_gathered))
-                    for i, arr in enumerate(u_gathered):
+                    print("Number of gathered shards:", len(all_shards))
+                    for i, arr in enumerate(all_shards):
                         print(f"Shard {i}: shape={arr.shape}")
                     raise
 
                 
-                shards_2d = [u_gathered[i * py:(i + 1) * py] for i in range(px)]
-
-                # ✅ FIXED: First stack each list of 2D arrays into 3D arrays, then concatenate
-                rows = [jnp.concatenate([jnp.expand_dims(shard, axis=0) for shard in row_shards], axis=0) for row_shards in shards_2d]
-
-                # ✅ Now concatenate rows along axis=1 (NX axis)
-                u_combined = jnp.concatenate(rows, axis=1)
-
-                # ✅ Extract u_x (component 0) from 3D array of shape (px * py, NX, NY)
-                # If necessary, reshape to final shape (2, NX, NY) based on how original data was stored
-                u_combined = jnp.reshape(u_combined, (2, NX, NY))  # <-- final corrected shape
                 u_host = np.array(u_combined[0])  # u_x
 
                 amp.append(u_host[NX // 2, NY // 8])
