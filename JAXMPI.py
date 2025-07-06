@@ -84,8 +84,9 @@ u_init = jnp.array([u0, v0])
 f0 = equilibrium(rho0, u_init).astype(dtype)
 
 # ✅ Set up device mesh
-devices = jax.devices()
-num_devices = len(devices)
+# devices = jax.devices()
+# num_devices = len(devices)
+num_devices = jax.process_count()
 px = int(math.floor(math.sqrt(num_devices)))
 while num_devices % px != 0:
     px -= 1
