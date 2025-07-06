@@ -6,10 +6,9 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import matplotlib.pyplot as plt
-from jax.experimental import mesh_utils
+from jax.experimental import mesh_utils, multihost_utils  # ✅ added multihost_utils
 from jax.sharding import Mesh, PartitionSpec as P, NamedSharding
 from jax.experimental.pjit import pjit
-from jax.experimental.multihost_utils import process_allgather  # ✅ NEW
 from mpi4py import MPI
 
 # ✅ MPI Initialization
@@ -121,17 +120,17 @@ with mesh:
 
     for step in range(NSTEPS):
         f = lbm_step(f)
+
         if step % 200 == 0:
             rho = jnp.einsum('ijk->jk', f)
             u = jnp.einsum('ai,ixy->axy', c, f) / rho
 
-            # ✅ NEW: Safely gather u from all processes
-            u_gathered = process_allgather(u)
+            # ✅ Gather full u from all processes before slicing
+            u_gathered = multihost_utils.process_allgather(u)
 
             if rank == 0:
-                # ✅ Assuming sharding on 'y', concatenate along axis=2
-                u_combined = jnp.concatenate(u_gathered, axis=2)
-                u_host = np.array(u_combined[0])  # u_x component
+                u_combined = jnp.concatenate(u_gathered, axis=2)  # Assuming sharding along 'y'
+                u_host = np.array(u_combined[0])  # Extract u_x component
 
                 amp.append(u_host[NX // 2, NY // 8])
                 profile = u_host[NX // 2, :].copy()
@@ -185,7 +184,6 @@ if rank == 0:
     plt.tight_layout()
     plt.show()
 
-    # ✅ Create GIF
     import imageio
     with imageio.get_writer('wave_decay.gif', mode='I', duration=0.1) as writer:
         for step in range(0, NSTEPS, 200):
