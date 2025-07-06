@@ -6,7 +6,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import matplotlib.pyplot as plt
-from jax.experimental import mesh_utils, multihost_utils  # ✅ added multihost_utils
+from jax.experimental import mesh_utils, multihost_utils  
 from jax.sharding import Mesh, PartitionSpec as P, NamedSharding
 from jax.experimental.pjit import pjit
 from mpi4py import MPI
@@ -16,20 +16,23 @@ comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-# ✅ JAX Distributed Environment Setup
-coordinator = os.environ.get("JAX_COORDINATOR_ADDRESS", "localhost:1234")
-os.environ["JAX_PROCESS_ID"] = str(rank)
-os.environ["JAX_NUM_PROCESSES"] = str(size)
-os.environ["JAX_COORDINATOR"] = coordinator
+import jax.distributed
+jax.distributed.initialize()
 
-if size > 1 and "JAX_DIST_INITIALIZED" not in os.environ:
-    from jax import distributed
-    distributed.initialize(
-        coordinator_address=coordinator,
-        num_processes=size,
-        process_id=rank
-    )
-    os.environ["JAX_DIST_INITIALIZED"] = "1"
+# ✅ JAX Distributed Environment Setup
+# coordinator = os.environ.get("JAX_COORDINATOR_ADDRESS", "localhost:1234")
+# os.environ["JAX_PROCESS_ID"] = str(rank)
+# os.environ["JAX_NUM_PROCESSES"] = str(size)
+# os.environ["JAX_COORDINATOR"] = coordinator
+
+# if size > 1 and "JAX_DIST_INITIALIZED" not in os.environ:
+#     from jax import distributed
+#     distributed.initialize(
+#         coordinator_address=coordinator,
+#         num_processes=size,
+#         process_id=rank
+#     )
+#     os.environ["JAX_DIST_INITIALIZED"] = "1"
 
 # ✅ Log device and environment info
 print("Starting JAX PJIT simulation...")
