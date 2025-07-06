@@ -126,20 +126,18 @@ with mesh:
             rho = jnp.einsum('ijk->jk', f)
             u = jnp.einsum('ai,ixy->axy', c, f) / rho
 
-            u_gathered = multihost_utils.process_allgather(u)
+            u_np = np.array(u)
+            all_shards = comm.gather(u_np, root=0)
 
-            for i, arr in enumerate(u_gathered):
-                print(f"Shape of u_gathered[{i}]: {arr.shape}")
-            
             if rank == 0:
-                print(f"Gathered {len(u_gathered)} shards")
+                print(f"Gathered {len(u_np)} shards")
                 print(f"Mesh shape: px={px}, py={py}, total={px * py}")
                 # ✅ FIXED: Reshape u_gathered into 2D shard layout
                 try:
                    # Reconstruct mesh layout from gathered full replicas
-                    assert len(u_gathered) == px * py, f"Expected {px*py} shards, got {len(u_gathered)}"
+                    assert len(all_shards) == size , f"Expected {px*py} shards, got {len(u_np)}"
 
-                    shards_2d = [u_gathered[i * py:(i + 1) * py] for i in range(px)]
+                    shards_2d = [u_np[i * py:(i + 1) * py] for i in range(px)]
                     rows = [jnp.concatenate(row, axis=2) for row in shards_2d]  # concatenate over Y
                     u_combined = jnp.concatenate(rows, axis=1)  # concatenate over X
 
