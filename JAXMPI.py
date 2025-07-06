@@ -19,6 +19,9 @@ size = comm.Get_size()
 import jax.distributed
 jax.distributed.initialize()
 
+print(f"Process {jax.process_index()} / {jax.process_count()} sees devices: {jax.devices()}")
+
+
 # ✅ JAX Distributed Environment Setup
 # coordinator = os.environ.get("JAX_COORDINATOR_ADDRESS", "localhost:1234")
 # os.environ["JAX_PROCESS_ID"] = str(rank)
