@@ -40,7 +40,7 @@ print(f"JAX process {jax.process_index()} out of {jax.process_count()} is runnin
 print(f"JAX platform: {jax.default_backend()}")
 
 # ✅ Simulation parameters
-NX, NY = 8000, 8000
+NX, NY = 40000, 40000
 NSTEPS = 10000
 omega = 1.7
 u_max = 0.1
