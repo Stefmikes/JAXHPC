@@ -1,7 +1,14 @@
 import time
 import math
 import os
-# ✅ Distributed initialization (multi-host)
+import socket
+import jax
+import jax.numpy as jnp
+from jax.experimental import mesh_utils
+from jax.sharding import Mesh, PartitionSpec as P, NamedSharding
+from jax.experimental.pjit import pjit
+
+# ✅ Optional: distributed init (multi-host only if needed)
 if "JAX_DIST_INITIALIZED" not in os.environ:
     from jax import distributed
     coordinator = os.environ.get("JAX_COORDINATOR", "localhost:1234")
@@ -13,29 +20,16 @@ if "JAX_DIST_INITIALIZED" not in os.environ:
         process_id=process_id
     )
     os.environ["JAX_DIST_INITIALIZED"] = "1"
-import jax
-import jax.numpy as jnp
-from jax.experimental import mesh_utils
-from jax.sharding import Mesh, PartitionSpec as P, NamedSharding
-from jax.experimental.pjit import pjit
 
-
-import socket
+# ✅ Log hardware
 print("🚀 Starting JAX PJIT simulation...")
 print(f"🧪 CUDA_VISIBLE_DEVICES: {os.environ.get('CUDA_VISIBLE_DEVICES')}")
 print("🧪 All visible devices:", jax.devices())
 print("🧪 Local devices:", jax.local_devices())
 print(f"🚀 JAX process {jax.process_index()} out of {jax.process_count()} is running on host {socket.gethostname()} with devices: {jax.local_devices()}")
-
-# ✅ Log platform and available devices
 print(f"JAX platform: {jax.default_backend()}")
-all_devices = jax.devices()
-num_devices = len(all_devices)
-print(f"JAX is using {num_devices} device(s):")
-for i, d in enumerate(all_devices):
-    print(f"  Device {i}: {d}")
 
-# ✅ Domain setup
+# ✅ Simulation parameters
 NX, NY = 8000, 8000
 NSTEPS = 10000
 omega = 1.7
@@ -68,7 +62,7 @@ def stream(g):
               (1,1), (1,-1), (-1,-1), (-1,1)]
     return jnp.stack([jnp.roll(g[i], shift=shifts[i], axis=(0,1)) for i in range(9)])
 
-# ✅ Initialize grid and velocity
+# ✅ Initialize grid
 x = jnp.arange(NX) + 0.5
 y = jnp.arange(NY) + 0.5
 X, Y = jnp.meshgrid(x, y, indexing='ij')
@@ -78,45 +72,34 @@ v0 = jnp.zeros_like(u0)
 u_init = jnp.array([u0, v0])
 f0 = equilibrium(rho0, u_init).astype(dtype)
 
-if num_devices > 1:
-    # Determine 2D mesh shape (px, py) trying to get close to square layout
-    px = int(math.floor(math.sqrt(num_devices)))
-    while num_devices % px != 0:
-        px -= 1
-    py = num_devices // px
-    print(f"Using 2D mesh shape: ({px}, {py})")
+# ✅ Set up sharding across local GPUs
+devices = jax.local_devices()
+num_devices = len(devices)
+px = int(math.floor(math.sqrt(num_devices)))
+while num_devices % px != 0:
+    px -= 1
+py = num_devices // px
+print(f"🧩 Using 2D mesh shape: ({px}, {py})")
 
-    devices = mesh_utils.create_device_mesh((px, py))
-    mesh = Mesh(devices, axis_names=('x', 'y'))
+mesh = Mesh(mesh_utils.create_device_mesh((px, py)), axis_names=('x', 'y'))
 
-    with mesh:
-        # Shard NX by 'x', NY by 'y', direction dim unsharded (None)
-        sharding = NamedSharding(mesh, P(None, 'x', 'y'))
-        f = jax.device_put(f0, sharding)
-
-        def lbm_step(f):
-            f = stream(f)
-            f, _ = collide(f)
-            return f
-
-        lbm_step = pjit(
-            lbm_step,
-            in_shardings=P(None, 'x', 'y'),
-            out_shardings=P(None, 'x', 'y'),
-        )
-
-        start = time.time()
-        for _ in range(NSTEPS):
-            f = lbm_step(f)
-        end = time.time()
-else:
-    # Single device fallback
-    f = f0
+with mesh:
+    sharding = NamedSharding(mesh, P(None, 'x', 'y'))
+    f = jax.device_put(f0, sharding)
 
     def lbm_step(f):
         f = stream(f)
         f, _ = collide(f)
         return f
+
+    lbm_step = pjit(
+        lbm_step,
+        in_shardings=P(None, 'x', 'y'),
+        out_shardings=P(None, 'x', 'y'),
+    )
+
+    print("🔍 Effective sharding of `f`: ", f.sharding)
+    print("📦 `f` array is sharded across:", f.devices())
 
     start = time.time()
     for _ in range(NSTEPS):
