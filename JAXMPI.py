@@ -121,66 +121,65 @@ with mesh:
     for step in range(NSTEPS):
         f = lbm_step(f)
 
-        if step % 200 == 0:
-            rho = jnp.einsum('ijk->jk', f)
-            u = jnp.einsum('ai,ixy->axy', c, f) / rho
+        # if step % 200 == 0:
+        #     rho = jnp.einsum('ijk->jk', f)
+        #     u = jnp.einsum('ai,ixy->axy', c, f) / rho
 
-            u_local = jax.device_get(u)  # Move sharded array to host (replicates the whole u locally)
-            u_gathered = multihost_utils.process_allgather(u_local)
+        #     u_gathered = multihost_utils.process_allgather(u)
 
-            for i, arr in enumerate(u_gathered):
-                print(f"Shape of u_gathered[{i}]: {arr.shape}")
+        #     for i, arr in enumerate(u_gathered):
+        #         print(f"Shape of u_gathered[{i}]: {arr.shape}")
             
-            if rank == 0:
-                print(f"Gathered {len(u_gathered)} shards")
-                print(f"Mesh shape: px={px}, py={py}, total={px * py}")
-                # ✅ FIXED: Reshape u_gathered into 2D shard layout
-                try:
-                   # Reconstruct mesh layout from gathered full replicas
-                    assert len(u_gathered) == px * py, f"Expected {px*py} shards, got {len(u_gathered)}"
+        #     if rank == 0:
+        #         print(f"Gathered {len(u_gathered)} shards")
+        #         print(f"Mesh shape: px={px}, py={py}, total={px * py}")
+        #         # ✅ FIXED: Reshape u_gathered into 2D shard layout
+        #         try:
+        #            # Reconstruct mesh layout from gathered full replicas
+        #             assert len(u_gathered) == px * py, f"Expected {px*py} shards, got {len(u_gathered)}"
 
-                    shards_2d = [u_gathered[i * py:(i + 1) * py] for i in range(px)]
-                    rows = [jnp.concatenate(row, axis=2) for row in shards_2d]  # concatenate over Y
-                    u_combined = jnp.concatenate(rows, axis=1)  # concatenate over X
+        #             shards_2d = [u_gathered[i * py:(i + 1) * py] for i in range(px)]
+        #             rows = [jnp.concatenate(row, axis=2) for row in shards_2d]  # concatenate over Y
+        #             u_combined = jnp.concatenate(rows, axis=1)  # concatenate over X
 
-                    # Final shape: (2, NX, NY)
-                    u_combined = jnp.reshape(u_combined, (2, NX, NY))
+        #             # Final shape: (2, NX, NY)
+        #             u_combined = jnp.reshape(u_combined, (2, NX, NY))
 
-                except Exception as e:
-                    print("Concatenation failed:", e)
-                    print("Number of gathered shards:", len(u_gathered))
-                    for i, arr in enumerate(u_gathered):
-                        print(f"Shard {i}: shape={arr.shape}")
-                    raise
+        #         except Exception as e:
+        #             print("Concatenation failed:", e)
+        #             print("Number of gathered shards:", len(u_gathered))
+        #             for i, arr in enumerate(u_gathered):
+        #                 print(f"Shard {i}: shape={arr.shape}")
+        #             raise
 
                 
-                shards_2d = [u_gathered[i * py:(i + 1) * py] for i in range(px)]
+        #         shards_2d = [u_gathered[i * py:(i + 1) * py] for i in range(px)]
 
-                # ✅ FIXED: First stack each list of 2D arrays into 3D arrays, then concatenate
-                rows = [jnp.concatenate([jnp.expand_dims(shard, axis=0) for shard in row_shards], axis=0) for row_shards in shards_2d]
+        #         # ✅ FIXED: First stack each list of 2D arrays into 3D arrays, then concatenate
+        #         rows = [jnp.concatenate([jnp.expand_dims(shard, axis=0) for shard in row_shards], axis=0) for row_shards in shards_2d]
 
-                # ✅ Now concatenate rows along axis=1 (NX axis)
-                u_combined = jnp.concatenate(rows, axis=1)
+        #         # ✅ Now concatenate rows along axis=1 (NX axis)
+        #         u_combined = jnp.concatenate(rows, axis=1)
 
-                # ✅ Extract u_x (component 0) from 3D array of shape (px * py, NX, NY)
-                # If necessary, reshape to final shape (2, NX, NY) based on how original data was stored
-                u_combined = jnp.reshape(u_combined, (2, NX, NY))  # <-- final corrected shape
-                u_host = np.array(u_combined[0])  # u_x
+        #         # ✅ Extract u_x (component 0) from 3D array of shape (px * py, NX, NY)
+        #         # If necessary, reshape to final shape (2, NX, NY) based on how original data was stored
+        #         u_combined = jnp.reshape(u_combined, (2, NX, NY))  # <-- final corrected shape
+        #         u_host = np.array(u_combined[0])  # u_x
 
-                amp.append(u_host[NX // 2, NY // 8])
-                profile = u_host[NX // 2, :].copy()
-                profiles.append(profile)
+        #         amp.append(u_host[NX // 2, NY // 8])
+        #         profile = u_host[NX // 2, :].copy()
+        #         profiles.append(profile)
 
-                plt.figure()
-                plt.plot(profile)
-                plt.title(f'Wave profile at step {step}')
-                plt.xlabel('y')
-                plt.ylabel('u_x Amplitude')
-                plt.ylim(-u_max, u_max)
-                plt.grid(True)
-                plt.tight_layout()
-                plt.savefig(f'frames/frame_{step:05d}.png')
-                plt.close()
+        #         plt.figure()
+        #         plt.plot(profile)
+        #         plt.title(f'Wave profile at step {step}')
+        #         plt.xlabel('y')
+        #         plt.ylabel('u_x Amplitude')
+        #         plt.ylim(-u_max, u_max)
+        #         plt.grid(True)
+        #         plt.tight_layout()
+        #         plt.savefig(f'frames/frame_{step:05d}.png')
+        #         plt.close()
 
     end = time.time()
 
@@ -196,33 +195,33 @@ print(f"Domain: {NX}x{NY}, Steps: {NSTEPS}")
 print(f"Viscosity: {nu:.4e}")
 
 # ✅ Plotting (only on rank 0)
-if rank == 0:
-    amp = np.array(amp)
-    profiles = np.array(profiles)
+# if rank == 0:
+#     amp = np.array(amp)
+#     profiles = np.array(profiles)
 
-    plt.figure()
-    for profile in profiles:
-        plt.plot(profile)
-    plt.title('Wave decay over time')
-    plt.xlabel('y')
-    plt.ylabel('u_x Amplitude')
-    plt.grid(True)
-    plt.tight_layout()
-    plt.show()
+#     plt.figure()
+#     for profile in profiles:
+#         plt.plot(profile)
+#     plt.title('Wave decay over time')
+#     plt.xlabel('y')
+#     plt.ylabel('u_x Amplitude')
+#     plt.grid(True)
+#     plt.tight_layout()
+#     plt.show()
 
-    plt.figure()
-    plt.plot(amp / amp[0])
-    plt.title('Amplitude decay at (NX/2, NY/8)')
-    plt.xlabel('Timestep index (every 200 steps)')
-    plt.ylabel('Relative Amplitude')
-    plt.grid(True)
-    plt.tight_layout()
-    plt.show()
+#     plt.figure()
+#     plt.plot(amp / amp[0])
+#     plt.title('Amplitude decay at (NX/2, NY/8)')
+#     plt.xlabel('Timestep index (every 200 steps)')
+#     plt.ylabel('Relative Amplitude')
+#     plt.grid(True)
+#     plt.tight_layout()
+#     plt.show()
 
-    import imageio
-    with imageio.get_writer('wave_decay.gif', mode='I', duration=0.1) as writer:
-        for step in range(0, NSTEPS, 200):
-            filename = f'frames/frame_{step:05d}.png'
-            if os.path.exists(filename):
-                image = imageio.imread(filename)
-                writer.append_data(image)
+#     import imageio
+#     with imageio.get_writer('wave_decay.gif', mode='I', duration=0.1) as writer:
+#         for step in range(0, NSTEPS, 200):
+#             filename = f'frames/frame_{step:05d}.png'
+#             if os.path.exists(filename):
+#                 image = imageio.imread(filename)
+#                 writer.append_data(image)
