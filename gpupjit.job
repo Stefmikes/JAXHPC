@@ -1,7 +1,7 @@
 #!/bin/bash -x
 #SBATCH --job-name=JAXHPC
-#SBATCH --partition=dev_gpu_a100_il
-#SBATCH --nodes=1
+#SBATCH --partition=gpu_a100_il
+#SBATCH --nodes=2
 #SBATCH --ntasks-per-node=1               # ✅ Only 1 task
 #SBATCH --gpus-per-node=4                 # ✅ Use all 4 GPUs in a single process
 #SBATCH --time=00:30:00
@@ -38,10 +38,12 @@ unset LD_LIBRARY_PATH
 nvidia-smi
 python -c "import jax; print('JAX devices:', jax.devices())"
 
-# ✅ Set JAX distributed variables for single-process mode
-export JAX_COORDINATOR=localhost:1234
-export JAX_NUM_PROCESSES=1
-export JAX_PROCESS_ID=0
+# ✅ Multi-process JAX distributed setup from SLURM
+export JAX_NUM_PROCESSES=$SLURM_NNODES
+export JAX_PROCESS_ID=$SLURM_PROCID
 
+# ✅ Coordinator: Use hostname of first node
+COORD_HOST=$(scontrol show hostnames "$SLURM_NODELIST" | head -n 1)
+export JAX_COORDINATOR="$COORD_HOST:1234"
 # ✅ Run your multi-GPU PJIT simulation with one process
 python JD_PJIT.py
