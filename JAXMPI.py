@@ -126,7 +126,7 @@ with mesh:
             rho = jnp.einsum('ijk->jk', f)
             u = jnp.einsum('ai,ixy->axy', c, f) / rho
 
-            u_local = u.addressable_data(0).data
+            u_local = u.addressable_data(0)
             u_np = np.array(u_local)  # Now it's safe
             all_shards = comm.gather(u_np, root=0)
 
