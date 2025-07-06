@@ -1,12 +1,6 @@
 import time
 import math
 import os
-import jax
-import jax.numpy as jnp
-from jax.experimental import mesh_utils
-from jax.sharding import Mesh, PartitionSpec as P, NamedSharding
-from jax.experimental.pjit import pjit
-
 # ✅ Distributed initialization (multi-host)
 if "JAX_DIST_INITIALIZED" not in os.environ:
     from jax import distributed
@@ -19,6 +13,12 @@ if "JAX_DIST_INITIALIZED" not in os.environ:
         process_id=process_id
     )
     os.environ["JAX_DIST_INITIALIZED"] = "1"
+import jax
+import jax.numpy as jnp
+from jax.experimental import mesh_utils
+from jax.sharding import Mesh, PartitionSpec as P, NamedSharding
+from jax.experimental.pjit import pjit
+
 
 import socket
 print("🚀 Starting JAX PJIT simulation...")
