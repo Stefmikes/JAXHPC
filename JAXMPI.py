@@ -40,8 +40,8 @@ print(f"Process {jax.process_index()} on {socket.gethostname()} using {jax.local
 print(f"JAX backend: {jax.default_backend()}")
 
 # ✅ Simulation parameters
-NX, NY = 4000, 4000
-NSTEPS = 10000
+NX, NY = 40, 40
+NSTEPS = 200
 omega = 1.7
 u_max = 0.1
 nu = (1 / omega - 0.5) / 3
@@ -127,7 +127,9 @@ with mesh:
 
             # ✅ Gather full u from all processes before slicing
             u_gathered = multihost_utils.process_allgather(u)
-
+            for i, arr in enumerate(u_gathered):
+                print(f"Shape of u_gathered[{i}]: {arr.shape}")
+            
             if rank == 0:
                 u_combined = jnp.concatenate(u_gathered, axis=2)  # Assuming sharding along 'y'
                 u_host = np.array(u_combined[0])  # Extract u_x component
