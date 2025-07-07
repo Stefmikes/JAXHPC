@@ -6,17 +6,17 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import matplotlib.pyplot as plt
-from jax.experimental import mesh_utils, multihost_utils  
+from jax.experimental import mesh_utils  
 from jax.sharding import Mesh, PartitionSpec as P, NamedSharding
 from jax.experimental.pjit import pjit
 from mpi4py import MPI
 
-# ✅ MPI Initialization
+#  MPI Initialization
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-# ✅ JAX Distributed Environment Setup
+#  JAX Distributed Environment Setup
 coordinator = os.environ.get("JAX_COORDINATOR_ADDRESS", "localhost:1234")
 os.environ["JAX_PROCESS_ID"] = str(rank)
 os.environ["JAX_NUM_PROCESSES"] = str(size)
@@ -40,8 +40,8 @@ print(f"Process {jax.process_index()} on {socket.gethostname()} using {jax.local
 print(f"JAX backend: {jax.default_backend()}")
 
 # ✅ Simulation parameters
-NX, NY = 4048, 4048
-NSTEPS = 4000 
+NX, NY = 400, 300
+NSTEPS = 10000 
 omega = 1.7
 u_max = 0.1
 nu = (1 / omega - 0.5) / 3
@@ -83,7 +83,7 @@ v0 = jnp.zeros_like(u0)
 u_init = jnp.array([u0, v0])
 f0 = equilibrium(rho0, u_init).astype(dtype)
 
-# ✅ Set up device mesh
+#  Set up device mesh
 # devices = jax.devices()
 # num_devices = len(devices)
 num_devices = jax.process_count()
@@ -95,7 +95,7 @@ print(f"Using 2D mesh shape: ({px}, {py})")
 
 mesh = Mesh(mesh_utils.create_device_mesh((px, py)), axis_names=('x', 'y'))
 
-# ✅ Run simulation
+# Run simulation
 with mesh:
     sharding = NamedSharding(mesh, P(None, 'x', 'y'))
     f = jax.device_put(f0, sharding)
@@ -122,53 +122,53 @@ with mesh:
     for step in range(NSTEPS):
         f = lbm_step(f)
 
-        if step % 100 == 0:
-            rho = jnp.einsum('ijk->jk', f)
-            u = jnp.einsum('ai,ixy->axy', c, f) / rho
+        # if step % 100 == 0:
+        #     rho = jnp.einsum('ijk->jk', f)
+        #     u = jnp.einsum('ai,ixy->axy', c, f) / rho
 
-            u_local = u.addressable_data(0)
-            u_np = np.array(u_local)  # Now it's safe
-            all_shards = comm.gather(u_np, root=0)
+        #     u_local = u.addressable_data(0)
+        #     u_np = np.array(u_local)  
+        #     all_shards = comm.gather(u_np, root=0)
 
-            if rank == 0:
-                print(f"Gathered {len(u_np)} shards")
-                print(f"Mesh shape: px={px}, py={py}, total={px * py}")
-                # ✅ FIXED: Reshape u_gathered into 2D shard layout
-                try:
-                   # Reconstruct mesh layout from gathered full replicas
-                    assert len(all_shards) == size , f"Expected {px*py} shards, got {len(all_shards)}"
+        #     if rank == 0:
+        #         print(f"Gathered {len(u_np)} shards")
+        #         print(f"Mesh shape: px={px}, py={py}, total={px * py}")
+        #         #  FIXED: Reshape u_gathered into 2D shard layout
+        #         try:
+        #            # Reconstruct mesh layout from gathered full replicas
+        #             assert len(all_shards) == size , f"Expected {px*py} shards, got {len(all_shards)}"
 
-                    shards_2d = [all_shards[i * py:(i + 1) * py] for i in range(px)]
-                    rows = [jnp.concatenate(row, axis=2) for row in shards_2d]  # concatenate over Y
-                    u_combined = jnp.concatenate(rows, axis=1)  # concatenate over X
+        #             shards_2d = [all_shards[i * py:(i + 1) * py] for i in range(px)]
+        #             rows = [jnp.concatenate(row, axis=2) for row in shards_2d]  # concatenate over Y
+        #             u_combined = jnp.concatenate(rows, axis=1)  # concatenate over X
 
-                    # Final shape: (2, NX, NY)
-                    u_combined = jnp.reshape(u_combined, (2, NX, NY))
+        #             # Final shape: (2, NX, NY)
+        #             u_combined = jnp.reshape(u_combined, (2, NX, NY))
 
-                except Exception as e:
-                    print("Concatenation failed:", e)
-                    print("Number of gathered shards:", len(all_shards))
-                    for i, arr in enumerate(all_shards):
-                        print(f"Shard {i}: shape={arr.shape}")
-                    raise
+        #         except Exception as e:
+        #             print("Concatenation failed:", e)
+        #             print("Number of gathered shards:", len(all_shards))
+        #             for i, arr in enumerate(all_shards):
+        #                 print(f"Shard {i}: shape={arr.shape}")
+        #             raise
 
                 
-                u_host = np.array(u_combined[0])  # u_x
+        #         u_host = np.array(u_combined[0])  # u_x
 
-                amp.append(u_host[NX // 2, NY // 8])
-                profile = u_host[NX // 2, :].copy()
-                profiles.append(profile)
+        #         amp.append(u_host[NX // 2, NY // 8])
+        #         profile = u_host[NX // 2, :].copy()
+        #         profiles.append(profile)
 
-                plt.figure()
-                plt.plot(profile)
-                plt.title(f'Wave profile at step {step}')
-                plt.xlabel('y')
-                plt.ylabel('u_x Amplitude')
-                plt.ylim(-u_max, u_max)
-                plt.grid(True)
-                plt.tight_layout()
-                plt.savefig(f'frames/frame_{step:05d}.png')
-                plt.close()
+        #         plt.figure()
+        #         plt.plot(profile)
+        #         plt.title(f'Wave profile at step {step}')
+        #         plt.xlabel('y')
+        #         plt.ylabel('u_x Amplitude')
+        #         plt.ylim(-u_max, u_max)
+        #         plt.grid(True)
+        #         plt.tight_layout()
+        #         plt.savefig(f'frames/frame_{step:05d}.png')
+        #         plt.close()
 
     end = time.time()
 
@@ -184,33 +184,33 @@ print(f"Domain: {NX}x{NY}, Steps: {NSTEPS}")
 print(f"Viscosity: {nu:.4e}")
 
 # ✅ Plotting (only on rank 0)
-if rank == 0:
-    amp = np.array(amp)
-    profiles = np.array(profiles)
+# if rank == 0:
+#     amp = np.array(amp)
+#     profiles = np.array(profiles)
 
-    plt.figure()
-    for profile in profiles:
-        plt.plot(profile)
-    plt.title('Wave decay over time')
-    plt.xlabel('y')
-    plt.ylabel('u_x Amplitude')
-    plt.grid(True)
-    plt.tight_layout()
-    plt.show()
+#     plt.figure()
+#     for profile in profiles:
+#         plt.plot(profile)
+#     plt.title('Wave decay over time')
+#     plt.xlabel('y')
+#     plt.ylabel('u_x Amplitude')
+#     plt.grid(True)
+#     plt.tight_layout()
+#     plt.show()
 
-    plt.figure()
-    plt.plot(amp / amp[0])
-    plt.title('Amplitude decay at (NX/2, NY/8)')
-    plt.xlabel('Timestep index (every 200 steps)')
-    plt.ylabel('Relative Amplitude')
-    plt.grid(True)
-    plt.tight_layout()
-    plt.show()
+#     plt.figure()
+#     plt.plot(amp / amp[0])
+#     plt.title('Amplitude decay at (NX/2, NY/8)')
+#     plt.xlabel('Timestep index (every 200 steps)')
+#     plt.ylabel('Relative Amplitude')
+#     plt.grid(True)
+#     plt.tight_layout()
+#     plt.show()
 
-    import imageio
-    with imageio.get_writer('wave_decay.gif', mode='I', duration=0.1) as writer:
-        for step in range(0, NSTEPS, 100):
-            filename = f'frames/frame_{step:05d}.png'
-            if os.path.exists(filename):
-                image = imageio.imread(filename)
-                writer.append_data(image)
+#     import imageio
+#     with imageio.get_writer('wave_decay.gif', mode='I', duration=0.1) as writer:
+#         for step in range(0, NSTEPS, 100):
+#             filename = f'frames/frame_{step:05d}.png'
+#             if os.path.exists(filename):
+#                 image = imageio.imread(filename)
+#                 writer.append_data(image)
