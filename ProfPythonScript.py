@@ -37,7 +37,7 @@ NY=40 #int(input("ny = "))
 scale  = 1               # set simulation size
 #NX     = 32*scale        # domain size
 #NY     = NX
-NSTEPS = 200*scale*scale # number of simulation time steps
+NSTEPS = 2000*scale*scale # number of simulation time steps
 NMSG   = 50*scale*scale  # show messages every NMSG time steps
 vis    = False           # show visualisation; set to False for performance measurements
 NVIS   = NMSG            # show visualisation every NVIS time steps
@@ -74,7 +74,7 @@ ax.plot(u[0,NX//2,:])
 ax.set_title('Wave decay')
 ax.set_xlabel('y')
 ax.set_ylabel('Amplitude')
-for n in range(1,10001):
+for n in range(1,2000):
     f = Stream(f)
     f = Collide(f)
     if n%100==0:
