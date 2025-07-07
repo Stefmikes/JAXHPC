@@ -55,7 +55,7 @@ export JAX_NUM_PROCESSES=$SLURM_NTASKS
 export JAX_COORDINATOR_ADDRESS=$(scontrol show hostname $SLURM_NODELIST | head -n 1):1234
 
 # ✅ Launch script via MPI
-mpirun -np 4 \
+mpirun -np 2 \
   --bind-to none --map-by slot \
   -x PATH -x LD_LIBRARY_PATH -x PYTHONPATH \
   -x NCCL_DEBUG=INFO -x XLA_PYTHON_CLIENT_PREALLOCATE=false \
