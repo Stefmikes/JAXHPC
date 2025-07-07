@@ -2,8 +2,8 @@
 #SBATCH --job-name=JAXHPC
 #SBATCH --partition=dev_gpu_a100_il
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node=6
-#SBATCH --gpus-per-node=6
+#SBATCH --ntasks-per-node=2
+#SBATCH --gpus-per-node=2
 #SBATCH --time=00:30:00
 #SBATCH --mem=16G
 #SBATCH --export=ALL
@@ -55,7 +55,7 @@ export JAX_NUM_PROCESSES=$SLURM_NTASKS
 export JAX_COORDINATOR_ADDRESS=$(scontrol show hostname $SLURM_NODELIST | head -n 1):1234
 
 # ✅ Launch script via MPI
-mpirun -np 6 \
+mpirun -np 2 \
   --bind-to none --map-by slot \
   -x PATH -x LD_LIBRARY_PATH -x PYTHONPATH \
   -x NCCL_DEBUG=INFO -x XLA_PYTHON_CLIENT_PREALLOCATE=false \
