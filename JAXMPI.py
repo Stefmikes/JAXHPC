@@ -41,7 +41,7 @@ print(f"JAX backend: {jax.default_backend()}")
 
 # ✅ Simulation parameters
 NX, NY = 40, 60
-NSTEPS = 200
+NSTEPS =2000 
 omega = 1.7
 u_max = 0.1
 nu = (1 / omega - 0.5) / 3
@@ -122,7 +122,7 @@ with mesh:
     for step in range(NSTEPS):
         f = lbm_step(f)
 
-        if step % 20 == 0:
+        if step % 100 == 0:
             rho = jnp.einsum('ijk->jk', f)
             u = jnp.einsum('ai,ixy->axy', c, f) / rho
 
@@ -209,7 +209,7 @@ if rank == 0:
 
     import imageio
     with imageio.get_writer('wave_decay.gif', mode='I', duration=0.1) as writer:
-        for step in range(0, NSTEPS, 20):
+        for step in range(0, NSTEPS, 100):
             filename = f'frames/frame_{step:05d}.png'
             if os.path.exists(filename):
                 image = imageio.imread(filename)
