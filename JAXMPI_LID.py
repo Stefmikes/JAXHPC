@@ -40,7 +40,7 @@ print(f"JAX backend: {jax.default_backend()}")
 
 # ✅ Simulation parameters
 NX, NY = 300, 300
-NSTEPS = 50000 
+NSTEPS = 30000 
 omega = 1.67
 u_max = 0.1
 nu = (1 / omega - 0.5) / 3
@@ -142,7 +142,7 @@ with mesh:
     for step in range(NSTEPS):
         f = lbm_step(f)
 
-        if step % 1000 == 0:
+        if step % 200 == 0:
             rho = jnp.einsum('ijk->jk', f)
             u = jnp.einsum('ai,ixy->axy', c, f) / rho
             u_local = u.addressable_data(0)
@@ -161,8 +161,8 @@ with mesh:
 
                 u_x = u_combined[0]
                 u_y = u_combined[1]
-                if step == 0:
-                    print("Top lid velocity:", u_x[:, -1])
+                # if step == 0:
+                #     print("Top lid velocity:", u_x[:, -1])
                 speed = np.sqrt(u_x**2 + u_y**2)
                 print(f"Step {step}: top lid max u_x = {u_x[:, -1].max():.4f}")
 
@@ -183,15 +183,15 @@ with mesh:
                 plt.savefig(f'frames/streamplot_{step:05d}.png')
                 plt.close()
 
-                plt.figure(figsize=(6,5))
-                plt.imshow(speed.T, origin='lower', cmap='plasma', extent=[0, NX, 0, NY])
-                plt.colorbar(label='Speed')
-                plt.title(f'Speed Magnitude at step {step}')
-                plt.xlabel('X')
-                plt.ylabel('Y')
-                plt.tight_layout()
-                plt.savefig(f'frames/speed_magnitude_{step:05d}.png')
-                plt.close()
+                # plt.figure(figsize=(6,5))
+                # plt.imshow(speed.T, origin='lower', cmap='plasma', extent=[0, NX, 0, NY])
+                # plt.colorbar(label='Speed')
+                # plt.title(f'Speed Magnitude at step {step}')
+                # plt.xlabel('X')
+                # plt.ylabel('Y')
+                # plt.tight_layout()
+                # plt.savefig(f'frames/speed_magnitude_{step:05d}.png')
+                # plt.close()
 
     end = time.time()
 
@@ -210,9 +210,9 @@ if rank == 0:
     profiles = np.array(profiles)
 
     import imageio
-    for prefix in ['streamplot', 'speed_magnitude']:
+    for prefix in ['streamplot']:
         with imageio.get_writer(f'{prefix}.gif', mode='I', duration=0.5) as writer:
-            for step in range(0, NSTEPS,1000):
+            for step in range(0, NSTEPS,200):
                 filename = f'frames/{prefix}_{step:05d}.png'
                 if os.path.exists(filename):
                     image = imageio.imread(filename)
