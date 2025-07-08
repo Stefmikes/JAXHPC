@@ -63,8 +63,10 @@ export JAX_COORDINATOR_ADDRESS=$(scontrol show hostname $SLURM_NODELIST | head -
 #   --mca plm_rsh_no_tree_spawn 1 \
 #   bash -c '
 #     export CUDA_VISIBLE_DEVICES=$OMPI_COMM_WORLD_RANK
-#     python JAXMPI.py
+#     python JAXMPI_SWD.py
 #   '
+
+#For multiple nodes, we need to set CUDA_VISIBLE_DEVICES to 0 for each node
 mpirun -np $SLURM_NTASKS \
   --bind-to none --map-by slot \
   -x PATH -x LD_LIBRARY_PATH -x PYTHONPATH \
@@ -73,7 +75,7 @@ mpirun -np $SLURM_NTASKS \
   --mca plm_rsh_no_tree_spawn 1 \
   bash -c '
     export CUDA_VISIBLE_DEVICES=0
-    python JAXMPI.py
+    python JAXMPI_SWD.py
 '
 
 
