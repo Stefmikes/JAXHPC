@@ -161,8 +161,7 @@ with mesh:
 
                 u_x = u_combined[0]
                 u_y = u_combined[1]
-                # if step == 0:
-                #     print("Top lid velocity:", u_x[:, -1])
+            
                 speed = np.sqrt(u_x**2 + u_y**2)
                 print(f"Step {step}: top lid max u_x = {u_x[:, -1].max():.4f}")
 
@@ -206,8 +205,8 @@ print(f"Domain: {NX}x{NY}, Steps: {NSTEPS}")
 print(f"Viscosity: {nu:.4e}")
 
 if rank == 0:
-    amp = np.array(amp)
-    profiles = np.array(profiles)
+    # amp = np.array(amp)
+    # profiles = np.array(profiles)
 
     import imageio
     for prefix in ['streamplot']:
