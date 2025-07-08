@@ -1,9 +1,9 @@
 #!/bin/bash -x
 #SBATCH --job-name=JAXHPC
-#SBATCH --partition=dev_gpu_a100_il
-#SBATCH --nodes=1
-#SBATCH --ntasks-per-node=2
-#SBATCH --gpus-per-node=2
+#SBATCH --partition=gpu_a100_il
+#SBATCH --nodes=2
+#SBATCH --ntasks-per-node=1
+#SBATCH --gpus-per-node=1
 #SBATCH --time=00:30:00
 #SBATCH --mem=16G
 #SBATCH --export=ALL
