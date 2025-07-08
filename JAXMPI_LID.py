@@ -171,11 +171,16 @@ with mesh:
                 # X, Y = np.meshgrid(np.arange(NX), np.arange(NY), indexing='ij')
                 # Generate meshgrid with indexing='xy' to get the right shape
                 X, Y = np.meshgrid(np.arange(NY), np.arange(NX))  # note NY, NX order!
+                xlim = (0, NY)
+                ylim = (0, NX)
                 plt.figure(figsize=(7, 6))
                 plt.streamplot(X, Y, u_x.T, u_y.T, density=1.2, linewidth=1, arrowsize=1.5)
-                plt.title("Lid-driven cavity flow (Streamplot)")
+                plt.xlim(xlim)
+                plt.ylim(ylim)
+                plt.title(f'Lid-driven cavity flow (Steps:{step:05d})')
                 plt.xlabel("X")
                 plt.ylabel("Y")
+                # plt.gca().invert_xaxis()
                 plt.axis("equal")
                 plt.grid(True)
                 plt.tight_layout()
