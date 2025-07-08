@@ -66,7 +66,7 @@ def collide(g):
     feq = equilibrium(rho, u)
     return g + omega * (feq - g), u
 
-# Outside JIT — after defining c:
+# Outside JIT otherwise JIT cannot process — after defining c:
 shifts = [(int(c[0, i]), int(c[1, i])) for i in range(9)]
 
 @jax.jit
@@ -84,8 +84,6 @@ u_init = jnp.array([u0, v0])
 f0 = equilibrium(rho0, u_init).astype(dtype)
 
 #  Set up device mesh
-# devices = jax.devices()
-# num_devices = len(devices)
 num_devices = jax.process_count()
 px = int(math.floor(math.sqrt(num_devices)))
 while num_devices % px != 0:
@@ -103,6 +101,8 @@ with mesh:
     def lbm_step(f):
         f = stream(f)
         f, _ = collide(f)
+        f = apply_bounce_back(f)
+        f = apply_top_lid_velocity(f)
         return f
 
     lbm_step = pjit(

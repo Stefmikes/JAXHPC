@@ -6,9 +6,9 @@ from jax import lax
 import time
 
 # LBM parameters
-NX, NY = 60, 60  # square cavity
-NSTEPS = 10000
-omega = 0.7  # relaxation parameter
+NX, NY = 40, 40  # square cavity
+NSTEPS =200
+omega = 1.7  # relaxation parameter
 tau = 1 / omega
 u_lid = 0.1  # lid velocity
 
