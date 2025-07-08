@@ -101,8 +101,6 @@ with mesh:
     def lbm_step(f):
         f = stream(f)
         f, _ = collide(f)
-        f = apply_bounce_back(f)
-        f = apply_top_lid_velocity(f)
         return f
 
     lbm_step = pjit(
