@@ -40,8 +40,8 @@ print(f"JAX backend: {jax.default_backend()}")
 
 # ✅ Simulation parameters
 NX, NY = 300, 300
-NSTEPS = 30000 
-omega = 1.67
+NSTEPS = 100000 
+omega = 1.6
 u_max = 0.1
 nu = (1 / omega - 0.5) / 3
 
@@ -142,50 +142,50 @@ with mesh:
     for step in range(NSTEPS):
         f = lbm_step(f)
 
-        # if step % 200 == 0:
-        #     rho = jnp.einsum('ijk->jk', f)
-        #     u = jnp.einsum('ai,ixy->axy', c, f) / rho
-        #     u_local = u.addressable_data(0)
-        #     u_np = np.array(u_local)
-        #     all_shards = comm.gather(u_np, root=0)
+        if step % 1000 == 0:
+            rho = jnp.einsum('ijk->jk', f)
+            u = jnp.einsum('ai,ixy->axy', c, f) / rho
+            u_local = u.addressable_data(0)
+            u_np = np.array(u_local)
+            all_shards = comm.gather(u_np, root=0)
 
-        #     if rank == 0:
-        #         try:
-        #             shards_2d = [all_shards[i * py:(i + 1) * py] for i in range(px)]
-        #             rows = [np.concatenate(shard_row, axis=2) for shard_row in shards_2d]
-        #             u_combined = np.concatenate(rows, axis=1)
-        #             u_combined = u_combined.reshape(2, NX, NY)
-        #         except Exception as e:
-        #             print("Concatenation failed:", e)
-        #             raise
+            if rank == 0:
+                try:
+                    shards_2d = [all_shards[i * py:(i + 1) * py] for i in range(px)]
+                    rows = [np.concatenate(shard_row, axis=2) for shard_row in shards_2d]
+                    u_combined = np.concatenate(rows, axis=1)
+                    u_combined = u_combined.reshape(2, NX, NY)
+                except Exception as e:
+                    print("Concatenation failed:", e)
+                    raise
 
-        #         u_x = u_combined[0]
-        #         u_y = u_combined[1]
+                u_x = u_combined[0]
+                u_y = u_combined[1]
             
-        #         speed = np.sqrt(u_x**2 + u_y**2)
-        #         print(f"Step {step}: top lid max u_x = {u_x[:, -1].max():.4f}")
+                speed = np.sqrt(u_x**2 + u_y**2)
+                print(f"Step {step}: top lid max u_x = {u_x[:, -1].max():.4f}")
 
-        #         amp.append(u_x[NX // 2, NY // 8])
-        #         profiles.append(u_x[NX // 2, :].copy())
+                amp.append(u_x[NX // 2, NY // 8])
+                profiles.append(u_x[NX // 2, :].copy())
 
-        #         # X, Y = np.meshgrid(np.arange(NX), np.arange(NY), indexing='ij')
-        #         # Generate meshgrid with indexing='xy' to get the right shape
-        #         X, Y = np.meshgrid(np.arange(NY), np.arange(NX))  # note NY, NX order!
-        #         xlim = (0, NY)
-        #         ylim = (0, NX)
-        #         plt.figure(figsize=(7, 6))
-        #         plt.streamplot(X, Y, u_x.T, u_y.T, density=1.2, linewidth=1, arrowsize=1.5)
-        #         plt.xlim(xlim)
-        #         plt.ylim(ylim)
-        #         plt.title(f'Lid-driven cavity flow (Steps:{step:05d})')
-        #         plt.xlabel("X")
-        #         plt.ylabel("Y")
-        #         # plt.gca().invert_xaxis()
-        #         plt.axis("equal")
-        #         plt.grid(True)
-        #         plt.tight_layout()
-        #         plt.savefig(f'frames/streamplot_{step:05d}.png')
-        #         plt.close()
+                # X, Y = np.meshgrid(np.arange(NX), np.arange(NY), indexing='ij')
+                # Generate meshgrid with indexing='xy' to get the right shape
+                X, Y = np.meshgrid(np.arange(NY), np.arange(NX))  # note NY, NX order!
+                xlim = (0, NY)
+                ylim = (0, NX)
+                plt.figure(figsize=(7, 6))
+                plt.streamplot(X, Y, u_x.T, u_y.T, density=1.2, linewidth=1, arrowsize=1.5)
+                plt.xlim(xlim)
+                plt.ylim(ylim)
+                plt.title(f'Lid-driven cavity flow (Steps:{step:05d})')
+                plt.xlabel("X")
+                plt.ylabel("Y")
+                # plt.gca().invert_xaxis()
+                plt.axis("equal")
+                plt.grid(True)
+                plt.tight_layout()
+                plt.savefig(f'frames/streamplot_{step:05d}.png')
+                plt.close()
 
                 # plt.figure(figsize=(6,5))
                 # plt.imshow(speed.T, origin='lower', cmap='plasma', extent=[0, NX, 0, NY])
@@ -209,15 +209,15 @@ print(f"BLUPS: {blups:.3f}")
 print(f"Domain: {NX}x{NY}, Steps: {NSTEPS}")
 print(f"Viscosity: {nu:.4e}")
 
-# if rank == 0:
-#     # amp = np.array(amp)
-#     # profiles = np.array(profiles)
+if rank == 0:
+    # amp = np.array(amp)
+    # profiles = np.array(profiles)
 
-#     import imageio
-#     for prefix in ['streamplot']:
-#         with imageio.get_writer(f'{prefix}.gif', mode='I', duration=0.5) as writer:
-#             for step in range(0, NSTEPS,200):
-#                 filename = f'frames/{prefix}_{step:05d}.png'
-#                 if os.path.exists(filename):
-#                     image = imageio.imread(filename)
-#                     writer.append_data(image)
+    import imageio
+    for prefix in ['streamplot']:
+        with imageio.get_writer(f'{prefix}.gif', mode='I', duration=0.5) as writer:
+            for step in range(0, NSTEPS,200):
+                filename = f'frames/{prefix}_{step:05d}.png'
+                if os.path.exists(filename):
+                    image = imageio.imread(filename)
+                    writer.append_data(image)
