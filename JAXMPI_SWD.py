@@ -40,7 +40,7 @@ print(f"Process {jax.process_index()} on {socket.gethostname()} using {jax.local
 print(f"JAX backend: {jax.default_backend()}")
 
 # ✅ Simulation parameters
-NX, NY = 400, 300
+NX, NY = 1024, 1024
 NSTEPS = 10000 
 omega = 1.7
 u_max = 0.1
