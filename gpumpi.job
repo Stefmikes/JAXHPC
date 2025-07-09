@@ -1,9 +1,9 @@
 #!/bin/bash -x
 #SBATCH --job-name=JAXHPC
-#SBATCH --partition=gpu_a100_il
-#SBATCH --nodes=2
-#SBATCH --ntasks-per-node=4
-#SBATCH --gpus-per-node=4
+#SBATCH --partition=dev_gpu_a100_il
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=2
+#SBATCH --gpus-per-node=2
 #SBATCH --time=00:30:00
 #SBATCH --mem=16G
 #SBATCH --export=ALL
@@ -25,7 +25,7 @@ if [ ! -d "$ENV_DIR" ]; then
     pip install --upgrade pip
     pip install --upgrade "jax[cuda12]"
     MPICC=mpicc pip install --no-binary=mpi4py mpi4py
-    pip install numpy matplotlib imageio pillow
+    pip install numpy matplotlib imageio pillow rich
 else
     source $ENV_DIR/bin/activate
 fi
