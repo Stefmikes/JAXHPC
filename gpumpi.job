@@ -31,6 +31,7 @@ else
 fi
 
 # ✅ Prevent JAX from allocating all memory
+export TF_GPU_ALLOCATOR=cuda_malloc_async
 export XLA_PYTHON_CLIENT_PREALLOCATE=false
 
 # ✅ Fix CUDA/MPI path issues
