@@ -39,7 +39,7 @@ print(f"Process {jax.process_index()} on {socket.gethostname()} using {jax.local
 print(f"JAX backend: {jax.default_backend()}")
 
 # ✅ Simulation parameters
-NX, NY = 8000, 8000
+NX, NY = 4048, 4048
 NSTEPS = 100000 
 omega = 1.6
 u_max = 0.1
@@ -133,7 +133,7 @@ with mesh:
     )
 
     print("Sharding info:", f.sharding)
-    jax.debug.visualize_array_sharding(f.reshape(-1, f.shape[-1]))
+    # jax.debug.visualize_array_sharding(f.reshape(-1, f.shape[-1]))
 
 
     amp = []
