@@ -39,9 +39,9 @@ print(f"Process {jax.process_index()} on {socket.gethostname()} using {jax.local
 print(f"JAX backend: {jax.default_backend()}")
 
 # ✅ Simulation parameters
-NX, NY = 4048, 4048
-NSTEPS = 100000 
-omega = 1.6
+NX, NY = 30000, 30000
+NSTEPS = 5000 
+omega = 1.3
 u_max = 0.1
 nu = (1 / omega - 0.5) / 3
 
