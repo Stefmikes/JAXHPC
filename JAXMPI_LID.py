@@ -39,8 +39,8 @@ print(f"Process {jax.process_index()} on {socket.gethostname()} using {jax.local
 print(f"JAX backend: {jax.default_backend()}")
 
 # ✅ Simulation parameters
-NX, NY = 16000, 16000
-NSTEPS = 5000 
+NX, NY = 15000, 15000
+NSTEPS = 1000 
 omega = 1.3
 u_max = 0.1
 nu = (1 / omega - 0.5) / 3
@@ -111,6 +111,8 @@ while num_devices % px != 0:
     px -= 1
 py = num_devices // px
 print(f"Using 2D mesh shape: ({px}, {py})")
+print(f"Domain: {NX}x{NY}, Steps: {NSTEPS}")
+
 
 mesh = Mesh(mesh_utils.create_device_mesh((px, py)), axis_names=('x', 'y'))
 
