@@ -40,7 +40,7 @@ print(f"JAX backend: {jax.default_backend()}")
 
 # ✅ Simulation parameters
 NX, NY = 300, 300
-NSTEPS = 50000 
+NSTEPS = 40000 
 omega = 1.67
 u_max = 0.1
 nu = (1 / omega - 0.5) / 3
@@ -173,7 +173,8 @@ with mesh:
                     shards_2d = [all_shards[i * py:(i + 1) * py] for i in range(px)]
                     rows = [np.concatenate(shard_row, axis=2) for shard_row in shards_2d]
                     u_combined = np.concatenate(rows, axis=1)
-                    u_combined = u_combined.reshape(2, NX, NY)
+                    # u_combined = u_combined.reshape(2, NX, NY)
+
                 except Exception as e:
                     print("Concatenation failed:", e)
                     raise
@@ -229,9 +230,6 @@ print(f"Domain: {NX}x{NY}, Steps: {NSTEPS}")
 print(f"Viscosity: {nu:.4e}")
 
 if rank == 0:
-    # amp = np.array(amp)
-    # profiles = np.array(profiles)
-
     import imageio
     for prefix in ['streamplot']:
         with imageio.get_writer(f'{prefix}.gif', mode='I', duration=0.5) as writer:
