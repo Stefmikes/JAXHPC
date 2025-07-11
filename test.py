@@ -169,6 +169,10 @@ with mesh:
             all_shards = comm.gather(u_np, root=0)
 
             if rank == 0:
+
+                print(f"Gathered {len(all_shards)} shards, expecting {size}")
+                for i, shard in enumerate(all_shards):
+                    print(f"Shard {i} shape: {shard.shape}")
                 try:
                     # all_shards is a flat list of shape (2, local_NX, local_NY) for each process
                     # Reconstruct a (px, py) grid of velocity fields
