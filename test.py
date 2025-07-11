@@ -182,8 +182,8 @@ with mesh:
             # u_local = u.addressable_data(0)
             u_gathered = multihost_utils.process_allgather(u)
             u_np = np.array(u_gathered)
-            all_shards = comm.gather(u_np, root=0)
-
+            # all_shards = comm.gather(u_np, root=0)
+            all_shards = u_np
             if rank == 0:
                 print("Gathered global u shape:", u_gathered.shape)
                 print(f"Gathered {len(all_shards)} shards, expecting {size}")
