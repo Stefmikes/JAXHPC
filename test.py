@@ -58,6 +58,14 @@ assert NX % px == 0 and NY % py == 0, f"NX/NY not divisible by px/py: {NX},{NY} 
 local_NX = NX // px
 local_NY = NY // py
 
+print(f"Rank {rank}: jax.process_count() = {jax.process_count()}")
+print(f"Rank {rank}: MPI size = {size}")
+print(f"Global domain: NX={NX}, NY={NY}")
+print(f"Process grid: px={px}, py={py}")
+print(f"Local domain: local_NX={local_NX}, local_NY={local_NY}")
+print(f"Expected total size from shards: local_NX*px = {local_NX * px}, local_NY*py = {local_NY * py}")
+
+
 # ✅ Lattice constants
 dtype = jnp.float32
 w = jnp.array([4/9,1/9,1/9,1/9,1/9,1/36,1/36,1/36,1/36], dtype)
@@ -125,7 +133,11 @@ x = jnp.arange(x_start, x_end) + 0.5
 y = jnp.arange(y_start, y_end) + 0.5
 X, Y = jnp.meshgrid(x, y, indexing='ij')
 
+
 u0 = jnp.zeros((local_NX, local_NY), dtype)
+#DEBUG
+print(f"Rank {rank}: local u0 shape: {u0.shape}")
+
 rho0 = jnp.ones((local_NX, local_NY), dtype=dtype)
 v0 = jnp.zeros_like(u0)
 u_init = jnp.array([u0, v0])
