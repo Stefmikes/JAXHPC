@@ -6,7 +6,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import matplotlib.pyplot as plt
-from jax.experimental import mesh_utils  
+from jax.experimental import mesh_utils, multihost_utils  
 from jax.sharding import Mesh, PartitionSpec as P, NamedSharding
 from jax.experimental.pjit import pjit
 from mpi4py import MPI
@@ -181,11 +181,12 @@ with mesh:
             rho = jnp.einsum('ijk->jk', f)
             u = jnp.einsum('ai,ixy->axy', c, f) / rho
             # u_local = u.addressable_data(0)
-            u_np = np.array(u)
+            u_gathered = multihost_utils.process_allgather(u)
+            u_np = np.array(u_gathered)
             all_shards = comm.gather(u_np, root=0)
 
             if rank == 0:
-
+                print("Gathered global u shape:", u_gathered.shape)
                 print(f"Gathered {len(all_shards)} shards, expecting {size}")
                 for i, shard in enumerate(all_shards):
                     print(f"Shard {i} shape: {shard.shape}")
