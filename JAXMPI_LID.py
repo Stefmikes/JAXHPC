@@ -40,8 +40,8 @@ print(f"JAX backend: {jax.default_backend()}")
 
 # ✅ Simulation parameters
 NX, NY = 300, 300
-NSTEPS = 4000 
-omega = 1.67
+NSTEPS = 40000 
+omega = 1.6
 u_max = 0.1
 nu = (1 / omega - 0.5) / 3
 
@@ -94,40 +94,24 @@ def apply_top_lid_velocity(f, u_lid=jnp.array([-u_max, 0.0])):
         f = f.at[i, 1:-1, -1].set(f[i_opp, 1:-1, -1] - correction)
     return f
 
-# 🔄 Local domain decomposition based on process grid
+#  Initialize domain
+x = jnp.arange(NX) + 0.5
+y = jnp.arange(NY) + 0.5
+X, Y = jnp.meshgrid(x, y, indexing='ij')
+u0 = jnp.zeros((NX, NY), dtype)
+rho0 = jnp.ones((NX, NY), dtype=dtype)
+v0 = jnp.zeros_like(u0)
+u_init = jnp.array([u0, v0])
+f0 = equilibrium(rho0, u_init).astype(dtype)
+
+#  Device mesh setup
 num_devices = jax.process_count()
 px = int(math.floor(math.sqrt(num_devices)))
 while num_devices % px != 0:
     px -= 1
 py = num_devices // px
-
-ix = jax.process_index() % px
-iy = jax.process_index() // px
-
-local_NX = NX // px
-local_NY = NY // py
-
-x_start = ix * local_NX
-y_start = iy * local_NY
-x_end = x_start + local_NX
-y_end = y_start + local_NY
-
 print(f"Using 2D mesh shape: ({px}, {py})")
-print(f"Global domain: {NX}x{NY}, Steps: {NSTEPS}")
-print(f"Process {rank} handles local domain x:[{x_start}, {x_end}) y:[{y_start}, {y_end})")
 
-# 🔄 Initialize only the local subdomain
-x = jnp.arange(x_start, x_end) + 0.5
-y = jnp.arange(y_start, y_end) + 0.5
-X, Y = jnp.meshgrid(x, y, indexing='ij')
-
-u0 = jnp.zeros((local_NX, local_NY), dtype)
-rho0 = jnp.ones((local_NX, local_NY), dtype=dtype)
-v0 = jnp.zeros_like(u0)
-u_init = jnp.array([u0, v0])
-f0 = equilibrium(rho0, u_init).astype(dtype)
-
-#  Device mesh setup (same as before)
 mesh = Mesh(mesh_utils.create_device_mesh((px, py)), axis_names=('x', 'y'))
 
 
@@ -149,8 +133,6 @@ with mesh:
     )
 
     print("Sharding info:", f.sharding)
-    # jax.debug.visualize_array_sharding(f.reshape(-1, f.shape[-1]))
-
 
     amp = []
     profiles = []
@@ -170,15 +152,10 @@ with mesh:
 
             if rank == 0:
                 try:
-                    # Reshape 1D list into px x py grid of shards
-                    shards_grid = [[all_shards[i * py + j] for j in range(py)] for i in range(px)]
-
-                    # Concatenate in correct order: first along Y (axis=2), then X (axis=1)
-                    rows = [np.concatenate(row, axis=2) for row in shards_grid]  # concat along Y
-                    u_combined = np.concatenate(rows, axis=1)  # concat along X
-
-                    # u_combined = u_combined.reshape(2, NX, NY)
-
+                    shards_2d = [all_shards[i * py:(i + 1) * py] for i in range(px)]
+                    rows = [np.concatenate(shard_row, axis=2) for shard_row in shards_2d]
+                    u_combined = np.concatenate(rows, axis=1)
+                    u_combined = u_combined.reshape(2, NX, NY)
                 except Exception as e:
                     print("Concatenation failed:", e)
                     raise
@@ -234,6 +211,9 @@ print(f"Domain: {NX}x{NY}, Steps: {NSTEPS}")
 print(f"Viscosity: {nu:.4e}")
 
 if rank == 0:
+    # amp = np.array(amp)
+    # profiles = np.array(profiles)
+
     import imageio
     for prefix in ['streamplot']:
         with imageio.get_writer(f'{prefix}.gif', mode='I', duration=0.5) as writer:
