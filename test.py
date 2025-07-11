@@ -194,6 +194,8 @@ with mesh:
                 xlim = (0, NY)
                 ylim = (0, NX)
                 plt.figure(figsize=(7, 6))
+                print("X shape:", X.shape, "Y shape:", Y.shape)
+                print("u_x.T shape:", u_x.T.shape, "u_y.T shape:", u_y.T.shape)
                 plt.streamplot(X, Y, u_x.T, u_y.T, density=1.2, linewidth=1, arrowsize=1.5)
                 plt.xlim(xlim)
                 plt.ylim(ylim)
