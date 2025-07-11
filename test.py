@@ -170,15 +170,19 @@ with mesh:
 
             if rank == 0:
                 try:
-                    # all_shards shape: [(2, local_NX, local_NY)] * size
-                    # Arrange into [px][py] grid
-                    shards_2d = [all_shards[i * py:(i + 1) * py] for i in range(px)]
+                    # all_shards is a flat list of shape (2, local_NX, local_NY) for each process
+                    # Reconstruct a (px, py) grid of velocity fields
+                    ordered_grid = [[None for _ in range(py)] for _ in range(px)]
+                    for proc_id, shard in enumerate(all_shards):
+                        ix = proc_id % px
+                        iy = proc_id // px
+                        ordered_grid[ix][iy] = shard  # shard shape: (2, local_NX, local_NY)
 
-                    # Concatenate over Y axis (axis=2) within rows, then over X axis (axis=1) across rows
-                    rows = [np.concatenate(shard_row, axis=2) for shard_row in shards_2d]  # along y
-                    u_combined = np.concatenate(rows, axis=1)  # along x
+                    # Concatenate along Y (axis=2) within rows, then along X (axis=1) across rows
+                    rows = [np.concatenate(row, axis=2) for row in ordered_grid]  # Y direction
+                    u_combined = np.concatenate(rows, axis=1)  # X direction
+                    print(f"Reconstructed shape: {u_combined.shape}")
 
-                    # Final shape: (2, NX, NY)
                     assert u_combined.shape == (2, NX, NY), f"u_combined.shape = {u_combined.shape}, expected (2, {NX}, {NY})"
                 except Exception as e:
                     print("Concatenation failed:", e)
