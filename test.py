@@ -40,7 +40,7 @@ print(f"JAX backend: {jax.default_backend()}")
 
 # ✅ Simulation parameters
 NX, NY = 300, 300
-NSTEPS = 1000 
+NSTEPS = 2000 
 omega = 1.67
 u_max = 0.1
 nu = (1 / omega - 0.5) / 3
@@ -180,35 +180,45 @@ with mesh:
             rho = jnp.einsum('ijk->jk', f)
             u = jnp.einsum('ai,ixy->axy', c, f) / rho
             # u_local = u.addressable_data(0)
-            print(f"Rank {rank}: u.shape = {u.shape}")
-
             u_gathered = multihost_utils.process_allgather(u)
-            print(f"Rank {rank}: u_gathered.shape = {u_gathered.shape}")
+            u_np = np.array(u_gathered)
+            all_shards = comm.gather(u_np, root=0)
+
             if rank == 0:
-                print(f"Rank 0: u_gathered_np shape = {u_gathered_np.shape}")
+                print("Gathered global u shape:", u_gathered.shape)
+                print(f"Gathered {len(all_shards)} shards, expecting {size}")
+                # for i, shard in enumerate(all_shards):
+                #     print(f"Shard {i} shape: {shard.shape}")
+                try:
+                    # all_shards is a flat list of shape (2, local_NX, local_NY) for each process
+                    # Reconstruct a (px, py) grid of velocity fields
+                    ordered_grid = [[None for _ in range(px)] for _ in range(py)]
+                    for proc_id, shard in enumerate(all_shards):
+                        ix = proc_id % px
+                        iy = proc_id // px
+                        ordered_grid[iy][ix] = shard  # shard shape: (2, local_NX, local_NY)
 
-                u_gathered_np = np.array(u_gathered)  # shape: (size, 2, local_NX, local_NY)
-
-                # Arrange shards into py rows and px columns
-                ordered_grid = [[None for _ in range(px)] for _ in range(py)]
-                for proc_id in range(size):
-                    ix = proc_id % px  # col index in process grid
-                    iy = proc_id // px  # row index in process grid
-                    ordered_grid[iy][ix] = u_gathered_np[proc_id]
-
-                # Concatenate shards in y-direction (axis=3) for each row
-                rows_concat = [np.concatenate(row, axis=2) for row in ordered_grid]
-                # Concatenate rows in x-direction (axis=2)
-                u_combined = np.concatenate(rows_concat, axis=1)
-
-                print("Reconstructed u_combined shape:", u_combined.shape)
-                assert u_combined.shape == (2, NX, NY), f"Shape mismatch {u_combined.shape} != {(2, NX, NY)}"
+                    # Concatenate along Y (axis=2) within rows, then along X (axis=1) across rows
+                    rows = [np.concatenate(row, axis=2) for row in ordered_grid]  # Y direction
+                    u_combined = np.concatenate(rows, axis=1)  # X direction
+                    print(f"Reconstructed shape: {u_combined.shape}")
+                    print("Final grid layout:")
+                    for row in ordered_grid:
+                        print([shard.shape for shard in row])
+                    if u_combined.shape[0] == 1:
+                        u_combined = u_combined[0]
+                    assert u_combined.shape == (2, NX, NY), f"u_combined.shape = {u_combined.shape}, expected (2, {NX}, {NY})"
+                except Exception as e:
+                    print("Concatenation failed:", e)
+                    raise
 
                 u_x = u_combined[0]
                 u_y = u_combined[1]
 
                 speed = np.sqrt(u_x**2 + u_y**2)
                 print(f"Step {step}: top lid max u_x = {u_x[:, -1].max():.4f}")
+                # print("u_x.shape:", u_x.shape)
+                # print(f"u_combined.shape = {u_combined.shape}")
 
                 ix = min(NX // 2, u_x.shape[0] - 1)
                 iy = min(NY // 8, u_x.shape[1] - 1)
