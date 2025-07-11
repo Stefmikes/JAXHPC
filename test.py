@@ -184,7 +184,7 @@ with mesh:
                     for proc_id, shard in enumerate(all_shards):
                         ix = proc_id % px
                         iy = proc_id // px
-                        ordered_grid[ix][iy] = shard  # shard shape: (2, local_NX, local_NY)
+                        ordered_grid[iy][ix] = shard  # shard shape: (2, local_NX, local_NY)
 
                     # Concatenate along Y (axis=2) within rows, then along X (axis=1) across rows
                     rows = [np.concatenate(row, axis=2) for row in ordered_grid]  # Y direction
