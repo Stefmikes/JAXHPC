@@ -40,7 +40,7 @@ print(f"JAX backend: {jax.default_backend()}")
 
 # ✅ Simulation parameters
 NX, NY = 300, 300
-NSTEPS = 4000 
+NSTEPS = 40000 
 omega = 1.67
 u_max = 0.1
 nu = (1 / omega - 0.5) / 3
@@ -64,7 +64,6 @@ print(f"Global domain: NX={NX}, NY={NY}")
 print(f"Process grid: px={px}, py={py}")
 print(f"Local domain: local_NX={local_NX}, local_NY={local_NY}")
 print(f"Expected total size from shards: local_NX*px = {local_NX * px}, local_NY*py = {local_NY * py}")
-
 
 # ✅ Lattice constants
 dtype = jnp.float32
@@ -136,7 +135,7 @@ X, Y = jnp.meshgrid(x, y, indexing='ij')
 
 u0 = jnp.zeros((local_NX, local_NY), dtype)
 #DEBUG
-print(f"Rank {rank}: local u0 shape: {u0.shape}")
+# print(f"Rank {rank}: local u0 shape: {u0.shape}")
 
 rho0 = jnp.ones((local_NX, local_NY), dtype=dtype)
 v0 = jnp.zeros_like(u0)
@@ -188,8 +187,8 @@ with mesh:
             if rank == 0:
                 print("Gathered global u shape:", u_gathered.shape)
                 print(f"Gathered {len(all_shards)} shards, expecting {size}")
-                for i, shard in enumerate(all_shards):
-                    print(f"Shard {i} shape: {shard.shape}")
+                # for i, shard in enumerate(all_shards):
+                #     print(f"Shard {i} shape: {shard.shape}")
                 try:
                     # all_shards is a flat list of shape (2, local_NX, local_NY) for each process
                     # Reconstruct a (px, py) grid of velocity fields
@@ -206,6 +205,8 @@ with mesh:
                     print("Final grid layout:")
                     for row in ordered_grid:
                         print([shard.shape for shard in row])
+                    if u_combined.shape[0] == 1:
+                        u_combined = u_combined[0]
                     assert u_combined.shape == (2, NX, NY), f"u_combined.shape = {u_combined.shape}, expected (2, {NX}, {NY})"
                 except Exception as e:
                     print("Concatenation failed:", e)
@@ -216,8 +217,8 @@ with mesh:
 
                 speed = np.sqrt(u_x**2 + u_y**2)
                 print(f"Step {step}: top lid max u_x = {u_x[:, -1].max():.4f}")
-                print("u_x.shape:", u_x.shape)
-                print(f"u_combined.shape = {u_combined.shape}")
+                # print("u_x.shape:", u_x.shape)
+                # print(f"u_combined.shape = {u_combined.shape}")
 
                 ix = min(NX // 2, u_x.shape[0] - 1)
                 iy = min(NY // 8, u_x.shape[1] - 1)
