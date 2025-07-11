@@ -45,6 +45,19 @@ omega = 1.67
 u_max = 0.1
 nu = (1 / omega - 0.5) / 3
 
+# 🔄 Local domain decomposition based on process grid
+num_devices = jax.process_count()
+px = int(math.floor(math.sqrt(num_devices)))
+while num_devices % px != 0:
+    px -= 1
+py = num_devices // px
+
+# Ensure domain is divisible by px and py
+assert NX % px == 0 and NY % py == 0, f"NX/NY not divisible by px/py: {NX},{NY} / {px},{py}"
+
+local_NX = NX // px
+local_NY = NY // py
+
 # ✅ Lattice constants
 dtype = jnp.float32
 w = jnp.array([4/9,1/9,1/9,1/9,1/9,1/36,1/36,1/36,1/36], dtype)
@@ -94,18 +107,9 @@ def apply_top_lid_velocity(f, u_lid=jnp.array([-u_max, 0.0])):
         f = f.at[i, 1:-1, -1].set(f[i_opp, 1:-1, -1] - correction)
     return f
 
-# 🔄 Local domain decomposition based on process grid
-num_devices = jax.process_count()
-px = int(math.floor(math.sqrt(num_devices)))
-while num_devices % px != 0:
-    px -= 1
-py = num_devices // px
-
 ix = jax.process_index() % px
 iy = jax.process_index() // px
 
-local_NX = NX // px
-local_NY = NY // py
 
 x_start = ix * local_NX
 y_start = iy * local_NY
