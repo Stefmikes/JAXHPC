@@ -180,7 +180,7 @@ with mesh:
                 try:
                     # all_shards is a flat list of shape (2, local_NX, local_NY) for each process
                     # Reconstruct a (px, py) grid of velocity fields
-                    ordered_grid = [[None for _ in range(px)] for _ in range(pxy)]
+                    ordered_grid = [[None for _ in range(px)] for _ in range(py)]
                     for proc_id, shard in enumerate(all_shards):
                         ix = proc_id % px
                         iy = proc_id // px
