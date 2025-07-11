@@ -194,6 +194,7 @@ with mesh:
                 speed = np.sqrt(u_x**2 + u_y**2)
                 print(f"Step {step}: top lid max u_x = {u_x[:, -1].max():.4f}")
                 print("u_x.shape:", u_x.shape)
+                print(f"u_combined.shape = {u_combined.shape}")
 
                 ix = min(NX // 2, u_x.shape[0] - 1)
                 iy = min(NY // 8, u_x.shape[1] - 1)
