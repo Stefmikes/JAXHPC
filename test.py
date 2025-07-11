@@ -170,45 +170,45 @@ with mesh:
 
             if rank == 0:
                 try:
+                    # all_shards shape: [(2, local_NX, local_NY)] * size
+                    # Arrange into [px][py] grid
                     shards_2d = [all_shards[i * py:(i + 1) * py] for i in range(px)]
-                    rows = [np.concatenate(shard_row, axis=2) for shard_row in shards_2d]
-                    u_combined = np.concatenate(rows, axis=1)
-                    # u_combined = u_combined.reshape(2, NX, NY)
 
+                    # Concatenate over Y axis (axis=2) within rows, then over X axis (axis=1) across rows
+                    rows = [np.concatenate(shard_row, axis=2) for shard_row in shards_2d]  # along y
+                    u_combined = np.concatenate(rows, axis=1)  # along x
+
+                    # Final shape: (2, NX, NY)
+                    assert u_combined.shape == (2, NX, NY), f"u_combined.shape = {u_combined.shape}, expected (2, {NX}, {NY})"
                 except Exception as e:
                     print("Concatenation failed:", e)
                     raise
 
                 u_x = u_combined[0]
                 u_y = u_combined[1]
-            
+
                 speed = np.sqrt(u_x**2 + u_y**2)
                 print(f"Step {step}: top lid max u_x = {u_x[:, -1].max():.4f}")
-
                 print("u_x.shape:", u_x.shape)
-                print("NX:", NX, "NY:", NY)
-                
+
                 ix = min(NX // 2, u_x.shape[0] - 1)
                 iy = min(NY // 8, u_x.shape[1] - 1)
                 amp.append(u_x[ix, iy])
 
-                profiles.append(u_x[u_x.shape[0] // 2, :].copy())
+                profiles.append(u_x[NX // 2, :].copy())  # now safe!
 
-                # X, Y = np.meshgrid(np.arange(NX), np.arange(NY), indexing='ij')
-                # Generate meshgrid with indexing='xy' to get the right shape
-                X, Y = np.meshgrid(np.arange(NY), np.arange(NX))  # note NY, NX order!
+                # Meshgrid with correct dimensions for streamplot
+                X, Y = np.meshgrid(np.arange(NY), np.arange(NX))
                 xlim = (0, NY)
                 ylim = (0, NX)
+
                 plt.figure(figsize=(7, 6))
-                print("X shape:", X.shape, "Y shape:", Y.shape)
-                print("u_x.T shape:", u_x.T.shape, "u_y.T shape:", u_y.T.shape)
                 plt.streamplot(X, Y, u_x.T, u_y.T, density=1.2, linewidth=1, arrowsize=1.5)
                 plt.xlim(xlim)
                 plt.ylim(ylim)
                 plt.title(f'Lid-driven cavity flow (Steps:{step:05d})')
                 plt.xlabel("X")
                 plt.ylabel("Y")
-                # plt.gca().invert_xaxis()
                 plt.axis("equal")
                 plt.grid(True)
                 plt.tight_layout()
