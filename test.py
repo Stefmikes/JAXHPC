@@ -192,7 +192,7 @@ with mesh:
                 iy = min(NY // 8, u_x.shape[1] - 1)
                 amp.append(u_x[ix, iy])
 
-                profiles.append(u_x[NX // 2, :].copy())
+                profiles.append(u_x[u_x.shape[0] // 2, :].copy())
 
                 # X, Y = np.meshgrid(np.arange(NX), np.arange(NY), indexing='ij')
                 # Generate meshgrid with indexing='xy' to get the right shape
