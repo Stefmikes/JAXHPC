@@ -185,7 +185,13 @@ with mesh:
                 speed = np.sqrt(u_x**2 + u_y**2)
                 print(f"Step {step}: top lid max u_x = {u_x[:, -1].max():.4f}")
 
-                amp.append(u_x[NX // 2, NY // 8])
+                print("u_x.shape:", u_x.shape)
+                print("NX:", NX, "NY:", NY)
+                
+                ix = min(NX // 2, u_x.shape[0] - 1)
+                iy = min(NY // 8, u_x.shape[1] - 1)
+                amp.append(u_x[ix, iy])
+
                 profiles.append(u_x[NX // 2, :].copy())
 
                 # X, Y = np.meshgrid(np.arange(NX), np.arange(NY), indexing='ij')
