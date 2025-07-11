@@ -180,8 +180,8 @@ with mesh:
         if step % 500 == 0:
             rho = jnp.einsum('ijk->jk', f)
             u = jnp.einsum('ai,ixy->axy', c, f) / rho
-            u_local = u.addressable_data(0)
-            u_np = np.array(u_local)
+            # u_local = u.addressable_data(0)
+            u_np = np.array(u)
             all_shards = comm.gather(u_np, root=0)
 
             if rank == 0:
