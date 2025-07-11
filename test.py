@@ -190,7 +190,9 @@ with mesh:
                     rows = [np.concatenate(row, axis=2) for row in ordered_grid]  # Y direction
                     u_combined = np.concatenate(rows, axis=1)  # X direction
                     print(f"Reconstructed shape: {u_combined.shape}")
-
+                    print("Final grid layout:")
+                    for row in ordered_grid:
+                        print([shard.shape for shard in row])
                     assert u_combined.shape == (2, NX, NY), f"u_combined.shape = {u_combined.shape}, expected (2, {NX}, {NY})"
                 except Exception as e:
                     print("Concatenation failed:", e)
