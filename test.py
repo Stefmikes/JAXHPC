@@ -39,7 +39,7 @@ print(f"Process {jax.process_index()} on {socket.gethostname()} using {jax.local
 print(f"JAX backend: {jax.default_backend()}")
 
 # ✅ Simulation parameters
-NX, NY = 20000, 20000
+NX, NY = 30000, 30000
 NSTEPS = 1000 
 omega = 1.67
 u_max = 0.1
@@ -182,9 +182,20 @@ with mesh:
             # u_local = u.addressable_data(0)
             u_gathered = multihost_utils.process_allgather(u)
             u_np = np.array(u_gathered)
-            all_shards = comm.gather(u_np, root=0)
+
+            # Use MPI Gather with buffers, all ranks must send same-shaped array
+            sendbuf = u_np
+            if rank == 0:
+                recvbuf = np.empty((size,) + sendbuf.shape, dtype=sendbuf.dtype)
+            else:
+                recvbuf = None
+
+            comm.Gather(sendbuf, recvbuf, root=0)
+            # all_shards = comm.gather(u_np, root=0)
             
             if rank == 0:
+                all_shards = u_np
+                print("Gathered global all shards u shape:", all_shards.shape)
                 print("Gathered global u shape:", u_gathered.shape)
                 print(f"Gathered {len(all_shards)} shards, expecting {size}")
                 # for i, shard in enumerate(all_shards):
@@ -193,7 +204,8 @@ with mesh:
                     # all_shards is a flat list of shape (2, local_NX, local_NY) for each process
                     # Reconstruct a (px, py) grid of velocity fields
                     ordered_grid = [[None for _ in range(px)] for _ in range(py)]
-                    for proc_id, shard in enumerate(all_shards):
+                    for proc_id in range(all_shards.shape[0]):
+                        shard = all_shards[proc_id]
                         ix = proc_id % px
                         iy = proc_id // px
                         ordered_grid[iy][ix] = shard  # shard shape: (2, local_NX, local_NY)
