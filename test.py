@@ -170,13 +170,9 @@ with mesh:
 
             if rank == 0:
                 try:
-                    # Reshape 1D list into px x py grid of shards
-                    shards_grid = [[all_shards[i * py + j] for j in range(py)] for i in range(px)]
-
-                    # Concatenate in correct order: first along Y (axis=2), then X (axis=1)
-                    rows = [np.concatenate(row, axis=2) for row in shards_grid]  # concat along Y
-                    u_combined = np.concatenate(rows, axis=1)  # concat along X
-
+                    shards_2d = [all_shards[i * py:(i + 1) * py] for i in range(px)]
+                    rows = [np.concatenate(shard_row, axis=2) for shard_row in shards_2d]
+                    u_combined = np.concatenate(rows, axis=1)
                     # u_combined = u_combined.reshape(2, NX, NY)
 
                 except Exception as e:
