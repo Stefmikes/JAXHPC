@@ -297,6 +297,11 @@ with mesh:
 
         f = jnp.maximum(f, 0.0)
 
+        # if size == 1:
+        #     all_shards = [u_np]
+        # else:
+        #     all_shards = comm.gather(u_np, root=0)
+
         if step % 100 == 0:
             # rho = jnp.einsum('ijk->jk', f)
             # u = jnp.einsum('ai,ixy->axy', c, f) / rho
@@ -315,41 +320,23 @@ with mesh:
                 print(f"Gathered {len(all_shards)} shards, expecting {size}")
 
                 try:
-                    # all_shards is a flat list of shape (2, local_NX, local_NY) for each process
-                    # Reconstruct a (px, py) grid of velocity fields
-                    ordered_grid = [[None for _ in range(px)] for _ in range(py)]
-                    for proc_id, shard in enumerate(all_shards):
-                        ix = proc_id % px
-                        iy = proc_id // px
-                        ordered_grid[iy][ix] = shard  # shard shape: (2, local_NX, local_NY)
+                    
+                    # Normalize shard shapes
+                    normalized_shards = []
+                    for shard in all_shards:
+                        while shard.ndim > 3:
+                            shard = shard[0]  # strip excess batch dim
+                        assert shard.shape[0] == 2, f"Unexpected shard shape: {shard.shape}"
+                        normalized_shards.append(shard)
 
-                     # Loop through horizontal neighbors (x-direction)
-                        # for row in ordered_grid:
-                        #     for i in range(px - 1):
-                        #         right_edge = row[i][0][:, -1]  # Right edge of left domain
-                        #         left_edge = row[i+1][0][:, 0]  # Left edge of right domain
-                        #         diff = np.abs(right_edge - left_edge)
-                        #         print(f"Edge x-diff max: {np.max(diff):.2e}, mean: {np.mean(diff):.2e}")
+                    # Concatenate along sharded axis (X)
+                    u_combined = np.concatenate(normalized_shards, axis=1)
 
-                    # Loop through vertical neighbors (y-direction)
-                    #     for i in range(py - 1):
-                    #         for j in range(px):
-                    #             bottom_edge = ordered_grid[i][j][1][-1, :]  # Bottom of upper domain
-                    #             top_edge = ordered_grid[i+1][j][1][0, :]     # Top of lower domain
-                    #             diff = np.abs(bottom_edge - top_edge)
-                    #             print(f"Edge y-diff max: {np.max(diff):.2e}, mean: {np.mean(diff):.2e}")
-
-                    # # Concatenate along Y (axis=2) within rows, then along X (axis=1) across rows
-                    # rows = [np.concatenate(row, axis=2) for row in ordered_grid]  # Y direction
-                    u_combined = np.concatenate(all_shards, axis=1)  # X direction
-
+               
                     print(f"Reconstructed shape: {u_combined.shape}")
-                    print("Final grid layout:")
-                    for row in ordered_grid:
-                        print([shard.shape for shard in row])
-                    if u_combined.shape[0] == 1:
-                        u_combined = u_combined[0]
-                    assert u_combined.shape == (2, NX, NY), f"u_combined.shape = {u_combined.shape}, expected (2, {NX}, {NY})"
+                    assert u_combined.shape == (2, NX, NY), \
+                        f"u_combined.shape = {u_combined.shape}, expected (2, {NX}, {NY})"
+
                 except Exception as e:
                     print("Concatenation failed:", e)
                     raise
