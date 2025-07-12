@@ -40,7 +40,7 @@ print(f"JAX backend: {jax.default_backend()}")
 
 # ✅ Simulation parameters
 NX, NY = 300, 300
-NSTEPS = 3000
+NSTEPS = 5000
 omega = 0.16
 u_max = 0.1
 nu = (1 / omega - 0.5) / 3
@@ -287,21 +287,18 @@ with mesh:
 
         f = jnp.maximum(f, 0.0)
 
-        if step % 20 == 0:
+        if step % 100 == 0:
             # rho = jnp.einsum('ijk->jk', f)
             # u = jnp.einsum('ai,ixy->axy', c, f) / rho
             rho = jnp.einsum('ijk->jk', f[:, 1:-1, 1:-1])
-            if jnp.any(rho <= 0):
-                print(f"Step {step}: Found non-positive density!")
-                print("Min rho:", rho.min())
+            # if jnp.any(rho <= 0):
+            #     print(f"Step {step}: Found non-positive density!")
+            #     print("Min rho:", rho.min())
             u = jnp.einsum('ai,ixy->axy', c, f[:, 1:-1, 1:-1]) / rho
             # u_local = u.addressable_data(0)
             u_gathered = multihost_utils.process_allgather(u)
             u_np = np.array(u_gathered)
             all_shards = comm.gather(u_np, root=0)
-
-            total_rho = jnp.sum(rho)
-            total_rho_all = comm.reduce(total_rho, op=MPI.SUM, root=0)
 
             if rank == 0:
                 
@@ -312,26 +309,27 @@ with mesh:
                     # Reconstruct a (px, py) grid of velocity fields
                     ordered_grid = [[None for _ in range(px)] for _ in range(py)]
                     for proc_id, shard in enumerate(all_shards):
-                        ix, iy = comm_cart.Get_coords(proc_id)  # Correct topology order
+                        ix = proc_id % px
+                        iy = proc_id // px
                         ordered_grid[iy][ix] = shard  # shard shape: (2, local_NX, local_NY)
 
                      # Loop through horizontal neighbors (x-direction)
-                        for row in ordered_grid:
-                            for i in range(px - 1):
-                                right_edge = row[i][0][:, -1]  # Right edge of left domain
-                                left_edge = row[i+1][0][:, 0]  # Left edge of right domain
-                                diff = np.abs(right_edge - left_edge)
-                                print(f"Edge x-diff max: {np.max(diff):.2e}, mean: {np.mean(diff):.2e}")
+                        # for row in ordered_grid:
+                        #     for i in range(px - 1):
+                        #         right_edge = row[i][0][:, -1]  # Right edge of left domain
+                        #         left_edge = row[i+1][0][:, 0]  # Left edge of right domain
+                        #         diff = np.abs(right_edge - left_edge)
+                        #         print(f"Edge x-diff max: {np.max(diff):.2e}, mean: {np.mean(diff):.2e}")
 
                     # Loop through vertical neighbors (y-direction)
-                        for i in range(py - 1):
-                            for j in range(px):
-                                bottom_edge = ordered_grid[i][j][1][-1, :]  # Bottom of upper domain
-                                top_edge = ordered_grid[i+1][j][1][0, :]     # Top of lower domain
-                                diff = np.abs(bottom_edge - top_edge)
-                                print(f"Edge y-diff max: {np.max(diff):.2e}, mean: {np.mean(diff):.2e}")
+                    #     for i in range(py - 1):
+                    #         for j in range(px):
+                    #             bottom_edge = ordered_grid[i][j][1][-1, :]  # Bottom of upper domain
+                    #             top_edge = ordered_grid[i+1][j][1][0, :]     # Top of lower domain
+                    #             diff = np.abs(bottom_edge - top_edge)
+                    #             print(f"Edge y-diff max: {np.max(diff):.2e}, mean: {np.mean(diff):.2e}")
 
-                    # Concatenate along Y (axis=2) within rows, then along X (axis=1) across rows
+                    # # Concatenate along Y (axis=2) within rows, then along X (axis=1) across rows
                     rows = [np.concatenate(row, axis=2) for row in ordered_grid]  # Y direction
                     u_combined = np.concatenate(rows, axis=1)  # X direction
 
@@ -394,7 +392,7 @@ if rank == 0:
     import imageio
     for prefix in ['streamplot']:
         with imageio.get_writer(f'{prefix}.gif', mode='I', duration=0.5) as writer:
-            for step in range(0, NSTEPS,20):
+            for step in range(0, NSTEPS,100):
                 filename = f'frames/{prefix}_{step:05d}.png'
                 if os.path.exists(filename):
                     image = imageio.imread(filename)
