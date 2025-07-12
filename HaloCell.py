@@ -188,28 +188,66 @@ bottom_src, bottom_dst = comm_cart.Shift(1, -1)
 top_src, top_dst = comm_cart.Shift(1, 1)
 
 def communicate(f_ikl):
-    # f_ikl: shape (9, local_NX+2, local_NY+2), includes halos
+    f_np = np.array(f_ikl, dtype=np.float64)  # Ensure correct type
+
+    # LEFT-RIGHT communication
+    send_left = f_np[:, 1, :].copy()     # Shape: (Ny, Q)
+    send_right = f_np[:, -2, :].copy()
+
+    recv_left = np.empty_like(send_left)
+    recv_right = np.empty_like(send_right)
+
+    # Safely handle left-right communication only if neighbors exist
+    if left_src != MPI.PROC_NULL:
+        comm_cart.Sendrecv(send_left, dest=left_dst, recvbuf=recv_left, source=left_src)
+        f_np[:, 0, :] = recv_left
+    else:
+        print("No left neighbor — skipping receive")
+
+    if right_src != MPI.PROC_NULL:
+        comm_cart.Sendrecv(send_right, dest=right_dst, recvbuf=recv_right, source=right_src)
+        f_np[:, -1, :] = recv_right
+    else:
+        print("No right neighbor — skipping receive")
+
+    # # TOP-BOTTOM
+    # send_bottom = f_np[:, :, 1].copy()
+    # recv_top = np.empty_like(send_bottom)
+    # send_top = f_np[:, :, -2].copy()
+    # recv_bottom = np.empty_like(send_top)
+
+    # comm_cart.Sendrecv(send_bottom, dest=bottom_dst, recvbuf=recv_bottom, source=bottom_src)
+    # comm_cart.Sendrecv(send_top, dest=top_dst, recvbuf=recv_top, source=top_src)
+
+    # f_np[:, :, 0] = recv_top
+    # f_np[:, :, -1] = recv_bottom
+
+    return f_np
+
+
+# def communicate(f_ikl):
+#     # f_ikl: shape (9, local_NX+2, local_NY+2), includes halos
     
-    # Existing edge communication
-    comm_cart.Sendrecv(
-        sendbuf=np.array(f_ikl[:, 1, :]).copy(), dest=left_dst,
-        recvbuf=np.array(f_ikl[:, -1, :]), source=left_src
-    )
+#     # Existing edge communication
+#     comm_cart.Sendrecv(
+#         sendbuf=np.array(f_ikl[:, 1, :]).copy(), dest=left_dst,
+#         recvbuf=np.array(f_ikl[:, -1, :]), source=left_src
+#     )
     
-    comm_cart.Sendrecv(
-        sendbuf=np.array(f_ikl[:, -2, :]).copy(), dest=right_dst,
-        recvbuf=np.array(f_ikl[:, 0, :]), source=right_src
-    )
+#     comm_cart.Sendrecv(
+#         sendbuf=np.array(f_ikl[:, -2, :]).copy(), dest=right_dst,
+#         recvbuf=np.array(f_ikl[:, 0, :]), source=right_src
+#     )
     
-    comm_cart.Sendrecv(
-        sendbuf=np.array(f_ikl[:, :, 1]).copy(), dest=bottom_dst,
-        recvbuf=np.array(f_ikl[:, :, -1]), source=bottom_src
-    )
+#     comm_cart.Sendrecv(
+#         sendbuf=np.array(f_ikl[:, :, 1]).copy(), dest=bottom_dst,
+#         recvbuf=np.array(f_ikl[:, :, -1]), source=bottom_src
+#     )
     
-    comm_cart.Sendrecv(
-        sendbuf=np.array(f_ikl[:, :, -2]).copy(), dest=top_dst,
-        recvbuf=np.array(f_ikl[:, :, 0]), source=top_src
-    )
+#     comm_cart.Sendrecv(
+#         sendbuf=np.array(f_ikl[:, :, -2]).copy(), dest=top_dst,
+#         recvbuf=np.array(f_ikl[:, :, 0]), source=top_src
+#     )
         
     # # Get process grid dims and current coordinates
     # ndx, ndy = comm_cart.Get_topo()[0]
@@ -251,7 +289,7 @@ def communicate(f_ikl):
     #     recvbuf=f_ikl[:, 1, 1], source=tr_src
     # )
     
-    return f_ikl
+    # return f_ikl
 
 local_devices = jax.local_devices()
 print(f"Process {jax.process_index()} local devices:", local_devices)
@@ -304,18 +342,9 @@ with mesh:
 
         f = jnp.maximum(f, 0.0)
 
-        # if size == 1:
-        #     all_shards = [u_np]
-        # else:
-        #     all_shards = comm.gather(u_np, root=0)
 
         if step % 100 == 0:
-            # rho = jnp.einsum('ijk->jk', f)
-            # u = jnp.einsum('ai,ixy->axy', c, f) / rho
             rho = jnp.einsum('ijk->jk', f[:, 1:-1, 1:-1])
-            # if jnp.any(rho <= 0):
-            #     print(f"Step {step}: Found non-positive density!")
-            #     print("Min rho:", rho.min())
             u = jnp.einsum('ai,ixy->axy', c, f[:, 1:-1, 1:-1]) / rho
             # u_local = u.addressable_data(0)
             u_gathered = multihost_utils.process_allgather(u)
