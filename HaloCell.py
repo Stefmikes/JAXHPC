@@ -292,13 +292,13 @@ with mesh:
             j_start = coords[1] * local_NY
 
         # Sanity check on shape
-        if shard.shape != (2, local_NX, local_NY):
-            shard = shard.reshape(2, local_NX, local_NY)
-            assert shard.shape == (2, local_NX, local_NY), f"Shape still incorrect: {shard.shape}"
+        while shard.ndim > 3:
+            shard = shard[0]
+        assert shard.shape == (2, local_NX, local_NY), f"Rank {r} shard shape mismatch: {shard.shape}"
 
         # Place the shard in the full array
         u_combined[:, i_start:i_start + local_NX, j_start:j_start + local_NY] = shard
-
+    
         return u_combined
 
 
@@ -312,7 +312,7 @@ with mesh:
         f_cpu = f.addressable_data(0)  # Get CPU array for MPI communication            
                 
         if size> 1:
-            # print(f"[Rank {rank}] Step {step} communicating halos...", flush=True, file=sys.stderr)
+            print(f"[Rank {rank}] Step {step} communicating halos...", flush=True, file=sys.stderr)
             f_cpu = communicate(f_cpu)
 
         f = jax.device_put(f_cpu, f.sharding)  
