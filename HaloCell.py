@@ -327,6 +327,12 @@ with mesh:
             # all_shards = comm.gather(u_np, root=0)
 
             u_np_local = np.array(multihost_utils.process_allgather(u))
+            # Trim extra leading dimensions
+            while u_np_local.ndim > 3:
+                u_np_local = u_np_local[0]
+            assert u_np_local.shape == (2, local_NX, local_NY), f"Shape mismatch: {u_np_local.shape}"
+            print(f"[Rank {rank}] local u shape: {u.shape}, after allgather: {u_np_local.shape}", flush=True)
+
             u_combined = gather_velocity_field(rank, comm, comm_cart, u_np_local, local_NX, local_NY, NX, NY)
 
             if rank == 0:
