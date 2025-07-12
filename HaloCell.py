@@ -41,7 +41,7 @@ print(f"JAX backend: {jax.default_backend()}")
 
 # ✅ Simulation parameters
 NX, NY = 300, 300
-NSTEPS = 5000
+NSTEPS = 2000
 omega = 0.16
 u_max = 0.1
 nu = (1 / omega - 0.5) / 3
@@ -278,14 +278,12 @@ with mesh:
     print("Sharding info:", f.sharding)
 
     def gather_velocity_field(rank, comm, comm_cart, u_np_local, local_NX, local_NY, NX, NY):
-
     # Gather all local velocity fields to root
         all_shards = comm.gather(u_np_local, root=0)
-
         if rank != 0:
             return None  # Only root reconstructs
 
-    # Initialize full field
+    
         u_combined = np.zeros((2, NX, NY), dtype=u_np_local.dtype)
 
         for r, shard in enumerate(all_shards):
@@ -294,9 +292,9 @@ with mesh:
             j_start = coords[1] * local_NY
 
         # Sanity check on shape
-        while shard.ndim > 3:
-            shard = shard[0]
-        assert shard.shape == (2, local_NX, local_NY), f"Rank {r} shard shape mismatch: {shard.shape}"
+        if shard.shape != (2, local_NX, local_NY):
+            shard = shard.reshape(2, local_NX, local_NY)
+            assert shard.shape == (2, local_NX, local_NY), f"Shape still incorrect: {shard.shape}"
 
         # Place the shard in the full array
         u_combined[:, i_start:i_start + local_NX, j_start:j_start + local_NY] = shard
@@ -313,18 +311,10 @@ with mesh:
     for step in range(NSTEPS):
         f_cpu = f.addressable_data(0)  # Get CPU array for MPI communication            
                 
-        if step % 100 == 0:
-            print(f"[Rank {rank}] Step {step} LEFT halo before:", f_cpu[:, 0, local_NY // 2])
-            print(f"[Rank {rank}] Step {step} RIGHT halo before:", f_cpu[:, -1, local_NY // 2])
-
         if size> 1:
-            print(f"[Rank {rank}] Step {step} communicating halos...", flush=True, file=sys.stderr)
+            # print(f"[Rank {rank}] Step {step} communicating halos...", flush=True, file=sys.stderr)
             f_cpu = communicate(f_cpu)
 
-        if step % 100 == 0:
-            print(f"[Rank {rank}] Step {step} LEFT halo after:", f_cpu[:, 0, local_NY // 2])
-            print(f"[Rank {rank}] Step {step} RIGHT halo after:", f_cpu[:, -1, local_NY // 2])
-          # Do MPI halo exchange
         f = jax.device_put(f_cpu, f.sharding)  
 
         f = lbm_collide_stream(f)      
