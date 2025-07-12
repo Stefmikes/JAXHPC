@@ -249,6 +249,7 @@ def communicate(f_ikl):
     return jnp.array(f_np)
 
 
+
 # def communicate(f_ikl):
 #     # f_ikl: shape (9, local_NX+2, local_NY+2), includes halos
     
