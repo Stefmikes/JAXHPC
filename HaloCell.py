@@ -41,7 +41,7 @@ print(f"JAX backend: {jax.default_backend()}")
 
 # ✅ Simulation parameters
 NX, NY = 300, 300
-NSTEPS = 10000
+NSTEPS = 5000
 omega = 0.16
 u_max = 0.1
 nu = (1 / omega - 0.5) / 3
@@ -318,6 +318,7 @@ with mesh:
             print(f"[Rank {rank}] Step {step} RIGHT halo before:", f_cpu[:, -1, local_NY // 2])
 
         if size> 1:
+            print(f"[Rank {rank}] Step {step} communicating halos...", flush=True, file=sys.stderr)
             f_cpu = communicate(f_cpu)
 
         if step % 100 == 0:
