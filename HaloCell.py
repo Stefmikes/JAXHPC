@@ -199,18 +199,25 @@ def communicate(f_ikl):
     recv_left = np.empty_like(send_left)
     recv_right = np.empty_like(send_right)
 
-    # Safely handle left-right communication only if neighbors exist
+    requests = []
+
     if left_src != MPI.PROC_NULL:
-        comm_cart.Sendrecv(send_left, dest=left_dst, recvbuf=recv_left, source=left_src)
-        f_np[:, 0, :] = recv_left
-    else:
-        print("No left neighbor — skipping receive")
+        req_send_left = comm_cart.Isend(send_left, dest=left_dst)
+        req_recv_left = comm_cart.Irecv(recv_left, source=left_src)
+        requests.extend([req_send_left, req_recv_left])
 
     if right_src != MPI.PROC_NULL:
-        comm_cart.Sendrecv(send_right, dest=right_dst, recvbuf=recv_right, source=right_src)
+        req_send_right = comm_cart.Isend(send_right, dest=right_dst)
+        req_recv_right = comm_cart.Irecv(recv_right, source=right_src)
+        requests.extend([req_send_right, req_recv_right])
+
+    MPI.Request.Waitall(requests)
+
+    if left_src != MPI.PROC_NULL:
+        f_np[:, 0, :] = recv_left
+    if right_src != MPI.PROC_NULL:
         f_np[:, -1, :] = recv_right
-    else:
-        print("No right neighbor — skipping receive")
+
 
     # # TOP-BOTTOM
     # send_bottom = f_np[:, :, 1].copy()
