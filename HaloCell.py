@@ -40,7 +40,7 @@ print(f"JAX backend: {jax.default_backend()}")
 
 # ✅ Simulation parameters
 NX, NY = 300, 300
-NSTEPS = 500
+NSTEPS = 2000
 omega = 0.16
 u_max = 0.1
 nu = (1 / omega - 0.5) / 3
@@ -246,20 +246,22 @@ def communicate(f_ikl):
     
     return f_ikl
 
+local_devices = jax.local_devices()
+print(f"Process {jax.process_index()} local devices:", local_devices)
 
-devices = jax.devices()
-print("Available devices:", devices)
+local_mesh_shape = (len(local_devices),)  # 1D mesh for simplicity
+local_device_mesh = mesh_utils.create_device_mesh(local_mesh_shape, devices=local_devices)
 
-# Assuming px * py <= number of devices
-device_mesh = mesh_utils.create_device_mesh((px, py))
-print("Device mesh:", device_mesh)
+mesh = Mesh(local_device_mesh, axis_names=('x'))  # Use axis_names matching mesh dims
 
 #  Device mesh setup (same as before)
-mesh = Mesh(mesh_utils.create_device_mesh((px, py)), axis_names=('x', 'y'))
+# mesh = Mesh(mesh_utils.create_device_mesh((px, py)), axis_names=('x', 'y'))
 
 
 with mesh:
-    sharding = NamedSharding(mesh, P(None, 'x', 'y'))
+    # sharding = NamedSharding(mesh, P(None, 'x', 'y'))
+    sharding = NamedSharding(mesh, P(None,'x'))  
+
     f = jax.device_put(f0, sharding)
 
     def lbm_collide_stream(f):
@@ -271,8 +273,8 @@ with mesh:
 
     lbm_collide_stream = pjit(
         lbm_collide_stream,
-        in_shardings=P(None, 'x', 'y'),
-        out_shardings=P(None, 'x', 'y'),
+        in_shardings=P(None, 'x'),
+        out_shardings=P(None, 'x'),
     )
 
     print("Sharding info:", f.sharding)
