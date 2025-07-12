@@ -40,7 +40,7 @@ print(f"JAX backend: {jax.default_backend()}")
 
 # ✅ Simulation parameters
 NX, NY = 300, 300
-NSTEPS = 5000
+NSTEPS = 500
 omega = 0.16
 u_max = 0.1
 nu = (1 / omega - 0.5) / 3
@@ -245,6 +245,14 @@ def communicate(f_ikl):
     # )
     
     return f_ikl
+
+
+devices = jax.devices()
+print("Available devices:", devices)
+
+# Assuming px * py <= number of devices
+device_mesh = mesh_utils.create_device_mesh((px, py))
+print("Device mesh:", device_mesh)
 
 #  Device mesh setup (same as before)
 mesh = Mesh(mesh_utils.create_device_mesh((px, py)), axis_names=('x', 'y'))
