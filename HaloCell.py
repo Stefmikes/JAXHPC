@@ -183,9 +183,17 @@ f0 = f0.at[:, -1, -1].set(f0[:, -2, -2])
 ndx, ndy = px, py  # process grid dims
 
 comm_cart = comm.Create_cart((ndx, ndy), periods=(False, False))
-print(f"Rank {rank} coords: {comm_cart.Get_coords(rank)}")
-left_src, left_dst = comm_cart.Shift(0, -1)
-right_src, right_dst = comm_cart.Shift(0, 1)
+coords = comm_cart.Get_coords(rank)
+
+left_src = rank - 1 if coords[0] > 0 else MPI.PROC_NULL
+left_dst = rank - 1 if coords[0] > 0 else MPI.PROC_NULL
+
+right_src = rank + 1 if coords[0] < px - 1 else MPI.PROC_NULL
+right_dst = rank + 1 if coords[0] < px - 1 else MPI.PROC_NULL
+
+# print(f"Rank {rank} coords: {comm_cart.Get_coords(rank)}")
+# left_src, left_dst = comm_cart.Shift(0, -1)
+# right_src, right_dst = comm_cart.Shift(0, 1)
 # bottom_src, bottom_dst = comm_cart.Shift(1, -1)
 # top_src, top_dst = comm_cart.Shift(1, 1)
 print(f"Rank {rank} neighbors: left_src={left_src}, right_src={right_src}")
@@ -238,7 +246,7 @@ def communicate(f_ikl):
     # f_np[:, :, 0] = recv_top
     # f_np[:, :, -1] = recv_bottom
     print(f"[Rank {rank}] Exiting communicate()", flush=True, file=sys.stderr)
-    return f_np
+    return jnp.array(f_np)
 
 
 # def communicate(f_ikl):
