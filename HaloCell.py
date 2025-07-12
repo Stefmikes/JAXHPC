@@ -279,7 +279,7 @@ with mesh:
         # f, _ = collide(f)                          
         # f = jnp.maximum(f, 0.0)  # Clamp to avoid negative values
 
-        f_cpu = jax.device_get(f)            
+        f_cpu = f.addressable_data(0)  # Get CPU array for MPI communication            
         f_cpu = communicate(f_cpu)           # Do MPI halo exchange
         f = jax.device_put(f_cpu, f.sharding)  
 
