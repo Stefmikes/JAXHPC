@@ -201,7 +201,7 @@ print(f"Rank {rank} neighbors: left_src={left_src}, right_src={right_src}")
 def communicate(f_ikl):
     f_np = np.array(f_ikl)  # Ensure correct type
 
-    print(f"[Rank {rank}] Starting communicate()", flush=True, file=sys.stderr)
+    # print(f"[Rank {rank}] Starting communicate()", flush=True, file=sys.stderr)
 
     # LEFT-RIGHT communication
     send_left = f_np[:, 1, :].copy()     # Shape: (Ny, Q)
@@ -213,20 +213,20 @@ def communicate(f_ikl):
     requests = []
 
     if left_src != MPI.PROC_NULL:
-        print(f"[Rank {rank}] Posting Isend to left_dst={left_dst} and Irecv from left_src={left_src}", flush=True, file=sys.stderr)
+        # print(f"[Rank {rank}] Posting Isend to left_dst={left_dst} and Irecv from left_src={left_src}", flush=True, file=sys.stderr)
         req_send_left = comm_cart.Isend(send_left, dest=left_dst)
         req_recv_left = comm_cart.Irecv(recv_left, source=left_src)
         requests.extend([req_send_left, req_recv_left])
 
     if right_src != MPI.PROC_NULL:
-        print(f"[Rank {rank}] Posting Isend to right_dst={right_dst} and Irecv from right_src={right_src}", flush=True, file=sys.stderr)
+        # print(f"[Rank {rank}] Posting Isend to right_dst={right_dst} and Irecv from right_src={right_src}", flush=True, file=sys.stderr)
         req_send_right = comm_cart.Isend(send_right, dest=right_dst)
         req_recv_right = comm_cart.Irecv(recv_right, source=right_src)
         requests.extend([req_send_right, req_recv_right])
 
-    print(f"[Rank {rank}] Waiting for all requests", flush=True, file=sys.stderr)
+    # print(f"[Rank {rank}] Waiting for all requests", flush=True, file=sys.stderr)
     MPI.Request.Waitall(requests)
-    print(f"[Rank {rank}] Completed Waitall", flush=True, file=sys.stderr)
+    # print(f"[Rank {rank}] Completed Waitall", flush=True, file=sys.stderr)
 
     if left_src != MPI.PROC_NULL:
         f_np[:, 0, :] = recv_left
@@ -245,7 +245,7 @@ def communicate(f_ikl):
 
     # f_np[:, :, 0] = recv_top
     # f_np[:, :, -1] = recv_bottom
-    print(f"[Rank {rank}] Exiting communicate()", flush=True, file=sys.stderr)
+    # print(f"[Rank {rank}] Exiting communicate()", flush=True, file=sys.stderr)
     return jnp.array(f_np)
 
 
@@ -360,7 +360,17 @@ with mesh:
         # f = jnp.maximum(f, 0.0)  # Clamp to avoid negative values
 
         f_cpu = f.addressable_data(0)  # Get CPU array for MPI communication            
-        f_cpu = communicate(f_cpu)           # Do MPI halo exchange
+        if step % 100 == 0:
+            f_cpu_before = np.array(f.addressable_data(0))  # shape: (9, local_NX+2, local_NY+2)
+            print(f"[Rank {rank}] Step {step} LEFT halo before:", f_cpu_before[:, 0, local_NY // 2])
+            print(f"[Rank {rank}] Step {step} RIGHT halo before:", f_cpu_before[:, -1, local_NY // 2])
+
+        f_cpu = communicate(f_cpu)
+
+        if step % 100 == 0:
+            print(f"[Rank {rank}] Step {step} LEFT halo after:", f_cpu[:, 0, local_NY // 2])
+            print(f"[Rank {rank}] Step {step} RIGHT halo after:", f_cpu[:, -1, local_NY // 2])
+          # Do MPI halo exchange
         f = jax.device_put(f_cpu, f.sharding)  
 
         f = lbm_collide_stream(f)      
