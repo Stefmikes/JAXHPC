@@ -103,14 +103,34 @@ def collide(g):
 
 shifts = [(int(c[0, i]), int(c[1, i])) for i in range(9)]
 
+# @jax.jit
+# def stream(f):
+#     f_new = jnp.zeros_like(f)
+#     for i in range(9):
+#         dx, dy = shifts[i]
+#         f_new = f_new.at[i].set(jnp.roll(f[i], shift=(dx, dy), axis=(0,1)))
+#     return f_new
 @jax.jit
 def stream(f):
     f_new = jnp.zeros_like(f)
     for i in range(9):
         dx, dy = shifts[i]
-        f_new = f_new.at[i].set(jnp.roll(f[i], shift=(dx, dy), axis=(0,1)))
+        shifted = f[i]
+        if dx == 1:
+            shifted = shifted[:-1, :]
+            f_new = f_new.at[i, 1:, :].set(shifted)
+        elif dx == -1:
+            shifted = shifted[1:, :]
+            f_new = f_new.at[i, :-1, :].set(shifted)
+        elif dy == 1:
+            shifted = shifted[:, :-1]
+            f_new = f_new.at[i, :, 1:].set(shifted)
+        elif dy == -1:
+            shifted = shifted[:, 1:]
+            f_new = f_new.at[i, :, :-1].set(shifted)
+        else:
+            f_new = f_new.at[i].set(f[i])  # No shift
     return f_new
-
 
 opposite = jnp.array([0, 3, 4, 1, 2, 7, 8, 5, 6])
 
@@ -190,12 +210,6 @@ left_dst = rank - 1 if coords[0] > 0 else MPI.PROC_NULL
 
 right_src = rank + 1 if coords[0] < px - 1 else MPI.PROC_NULL
 right_dst = rank + 1 if coords[0] < px - 1 else MPI.PROC_NULL
-
-# print(f"Rank {rank} coords: {comm_cart.Get_coords(rank)}")
-# left_src, left_dst = comm_cart.Shift(0, -1)
-# right_src, right_dst = comm_cart.Shift(0, 1)
-# bottom_src, bottom_dst = comm_cart.Shift(1, -1)
-# top_src, top_dst = comm_cart.Shift(1, 1)
 print(f"Rank {rank} neighbors: left_src={left_src}, right_src={right_src}")
 
 def communicate(f_ikl):
@@ -213,108 +227,23 @@ def communicate(f_ikl):
     requests = []
 
     if left_src != MPI.PROC_NULL:
-        # print(f"[Rank {rank}] Posting Isend to left_dst={left_dst} and Irecv from left_src={left_src}", flush=True, file=sys.stderr)
         req_send_left = comm_cart.Isend(send_left, dest=left_dst)
         req_recv_left = comm_cart.Irecv(recv_left, source=left_src)
         requests.extend([req_send_left, req_recv_left])
 
     if right_src != MPI.PROC_NULL:
-        # print(f"[Rank {rank}] Posting Isend to right_dst={right_dst} and Irecv from right_src={right_src}", flush=True, file=sys.stderr)
         req_send_right = comm_cart.Isend(send_right, dest=right_dst)
         req_recv_right = comm_cart.Irecv(recv_right, source=right_src)
         requests.extend([req_send_right, req_recv_right])
 
-    # print(f"[Rank {rank}] Waiting for all requests", flush=True, file=sys.stderr)
     MPI.Request.Waitall(requests)
-    # print(f"[Rank {rank}] Completed Waitall", flush=True, file=sys.stderr)
 
     if left_src != MPI.PROC_NULL:
         f_np[:, 0, :] = recv_left
     if right_src != MPI.PROC_NULL:
         f_np[:, -1, :] = recv_right
 
-
-    # # TOP-BOTTOM
-    # send_bottom = f_np[:, :, 1].copy()
-    # recv_top = np.empty_like(send_bottom)
-    # send_top = f_np[:, :, -2].copy()
-    # recv_bottom = np.empty_like(send_top)
-
-    # comm_cart.Sendrecv(send_bottom, dest=bottom_dst, recvbuf=recv_bottom, source=bottom_src)
-    # comm_cart.Sendrecv(send_top, dest=top_dst, recvbuf=recv_top, source=top_src)
-
-    # f_np[:, :, 0] = recv_top
-    # f_np[:, :, -1] = recv_bottom
-    # print(f"[Rank {rank}] Exiting communicate()", flush=True, file=sys.stderr)
     return jnp.array(f_np)
-
-
-
-# def communicate(f_ikl):
-#     # f_ikl: shape (9, local_NX+2, local_NY+2), includes halos
-    
-#     # Existing edge communication
-#     comm_cart.Sendrecv(
-#         sendbuf=np.array(f_ikl[:, 1, :]).copy(), dest=left_dst,
-#         recvbuf=np.array(f_ikl[:, -1, :]), source=left_src
-#     )
-    
-#     comm_cart.Sendrecv(
-#         sendbuf=np.array(f_ikl[:, -2, :]).copy(), dest=right_dst,
-#         recvbuf=np.array(f_ikl[:, 0, :]), source=right_src
-#     )
-    
-#     comm_cart.Sendrecv(
-#         sendbuf=np.array(f_ikl[:, :, 1]).copy(), dest=bottom_dst,
-#         recvbuf=np.array(f_ikl[:, :, -1]), source=bottom_src
-#     )
-    
-#     comm_cart.Sendrecv(
-#         sendbuf=np.array(f_ikl[:, :, -2]).copy(), dest=top_dst,
-#         recvbuf=np.array(f_ikl[:, :, 0]), source=top_src
-#     )
-        
-    # # Get process grid dims and current coordinates
-    # ndx, ndy = comm_cart.Get_topo()[0]
-    # rank = comm_cart.Get_rank()
-    # ix, iy = comm_cart.Get_coords(rank)
-    
-    # def in_domain(x, y):
-    #     return (0 <= x < ndx) and (0 <= y < ndy)
-    
-    # # Bottom-left corner
-    # bl_src = comm_cart.Get_cart_rank((ix - 1, iy - 1)) if in_domain(ix - 1, iy - 1) else MPI.PROC_NULL
-    # bl_dst = bl_src
-    # comm_cart.Sendrecv(
-    #     sendbuf=f_ikl[:, 1, 1].copy(), dest=bl_dst,
-    #     recvbuf=f_ikl[:, -1, -1], source=bl_src
-    # )
-    
-    # # Bottom-right corner
-    # br_src = comm_cart.Get_cart_rank((ix + 1, iy - 1)) if in_domain(ix + 1, iy - 1) else MPI.PROC_NULL
-    # br_dst = br_src
-    # comm_cart.Sendrecv(
-    #     sendbuf=f_ikl[:, 1, -2].copy(), dest=br_dst,
-    #     recvbuf=f_ikl[:, -1, 1], source=br_src
-    # )
-    
-    # # Top-left corner
-    # tl_src = comm_cart.Get_cart_rank((ix - 1, iy + 1)) if in_domain(ix - 1, iy + 1) else MPI.PROC_NULL
-    # tl_dst = tl_src
-    # comm_cart.Sendrecv(
-    #     sendbuf=f_ikl[:, -2, 1].copy(), dest=tl_dst,
-    #     recvbuf=f_ikl[:, 1, -1], source=tl_src
-    # )
-    
-    # # Top-right corner
-    # tr_src = comm_cart.Get_cart_rank((ix + 1, iy + 1)) if in_domain(ix + 1, iy + 1) else MPI.PROC_NULL
-    # tr_dst = tr_src
-    # comm_cart.Sendrecv(
-    #     sendbuf=f_ikl[:, -2, -2].copy(), dest=tr_dst,
-    #     recvbuf=f_ikl[:, 1, 1], source=tr_src
-    # )
-    
-    # return f_ikl
 
 local_devices = jax.local_devices()
 print(f"Process {jax.process_index()} local devices:", local_devices)
@@ -360,6 +289,7 @@ with mesh:
         # f = jnp.maximum(f, 0.0)  # Clamp to avoid negative values
 
         f_cpu = f.addressable_data(0)  # Get CPU array for MPI communication            
+                
         if step % 100 == 0:
             f_cpu_before = np.array(f.addressable_data(0))  # shape: (9, local_NX+2, local_NY+2)
             print(f"[Rank {rank}] Step {step} LEFT halo before:", f_cpu_before[:, 0, local_NY // 2])
@@ -376,7 +306,6 @@ with mesh:
         f = lbm_collide_stream(f)      
 
         f = jnp.maximum(f, 0.0)
-
 
         if step % 100 == 0:
             rho = jnp.einsum('ijk->jk', f[:, 1:-1, 1:-1])
