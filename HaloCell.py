@@ -46,17 +46,24 @@ u_max = 0.1
 nu = (1 / omega - 0.5) / 3
 
 # 🔄 Local domain decomposition based on process grid
-num_devices = jax.process_count()
-px = int(math.floor(math.sqrt(num_devices)))
-while num_devices % px != 0:
-    px -= 1
-py = num_devices // px
+# num_devices = jax.process_count()
+# px = int(math.floor(math.sqrt(num_devices)))
+# while num_devices % px != 0:
+#     px -= 1
+# py = num_devices // px
 
 # Ensure domain is divisible by px and py
-assert NX % px == 0 and NY % py == 0, f"NX/NY not divisible by px/py: {NX},{NY} / {px},{py}"
+# assert NX % px == 0 and NY % py == 0, f"NX/NY not divisible by px/py: {NX},{NY} / {px},{py}"
+
+
+#Try 1 Dimension mesh decomposition
+px = size  # Decompose only in X direction
+py = 1     # No decomposition in Y
+
+assert NX % px == 0, f"NX not divisible by number of processes: NX={NX}, px={px}"
 
 local_NX = NX // px
-local_NY = NY // py
+local_NY = NY
 
 # New local shape with halos
 local_NX_halo = local_NX + 2
@@ -129,13 +136,13 @@ def apply_top_lid_velocity(f, u_lid=jnp.array([-u_max, 0.0])):
         f = jnp.maximum(f, 0.0)
     return f
 
-ix = jax.process_index() % px
-iy = jax.process_index() // px
+ix = jax.process_index()
+iy = 0
 
 x_start = ix * local_NX
-y_start = iy * local_NY
+y_start = 0
 x_end = x_start + local_NX
-y_end = y_start + local_NY
+y_end = NY
 
 print(f"Using 2D mesh shape: ({px}, {py})")
 print(f"Global domain: {NX}x{NY}, Steps: {NSTEPS}")
