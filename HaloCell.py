@@ -39,9 +39,9 @@ print(f"Process {jax.process_index()} on {socket.gethostname()} using {jax.local
 print(f"JAX backend: {jax.default_backend()}")
 
 # ✅ Simulation parameters
-NX, NY = 400, 400
-NSTEPS = 20000 
-omega = 1.0
+NX, NY = 300, 300
+NSTEPS = 3000
+omega = 0.16
 u_max = 0.1
 nu = (1 / omega - 0.5) / 3
 
@@ -57,6 +57,10 @@ assert NX % px == 0 and NY % py == 0, f"NX/NY not divisible by px/py: {NX},{NY} 
 
 local_NX = NX // px
 local_NY = NY // py
+
+# New local shape with halos
+local_NX_halo = local_NX + 2
+local_NY_halo = local_NY + 2
 
 print(f"Rank {rank}: jax.process_count() = {jax.process_count()}")
 print(f"Rank {rank}: MPI size = {size}")
@@ -76,61 +80,57 @@ def equilibrium(rho, u):
     cdot3u = 3 * jnp.einsum('ai,axy->ixy', c, u)
     usq = jnp.einsum('axy->xy', u * u)
     wrho = jnp.einsum('i,xy->ixy', w, rho)
-    feq = wrho * (1 + cdot3u * (1 + 0.5 * cdot3u) - 1.5 * usq[jnp.newaxis, :, :])
-    return jnp.maximum(feq, 1e-10)
+    return wrho * (1 + cdot3u * (1 + 0.5 * cdot3u) - 1.5 * usq[jnp.newaxis, :, :])
+
+def print_warning(_):
+    return None
 
 @jax.jit
 def collide(g):
+    # eps = 1e-12
     rho = jnp.einsum('ijk->jk', g)
-    rho = jnp.maximum(rho, 1e-6)  # prevent divide-by-zero
     u = jnp.einsum('ai,ixy->axy', c, g) / rho
     feq = equilibrium(rho, u)
-    g_new = g + omega * (feq - g)
-    return jnp.maximum(g_new, 1e-10), u
+    return g + omega * (feq - g), u
 
 shifts = [(int(c[0, i]), int(c[1, i])) for i in range(9)]
 
 @jax.jit
 def stream(f):
-    return jnp.stack([jnp.roll(f[i], shift=(shifts[i][0], shifts[i][1]), axis=(0,1)) for i in range(9)], axis=0)
+    f_new = jnp.zeros_like(f)
+    for i in range(9):
+        dx, dy = shifts[i]
+        f_new = f_new.at[i].set(jnp.roll(f[i], shift=(dx, dy), axis=(0,1)))
+    return f_new
+
 
 opposite = jnp.array([0, 3, 4, 1, 2, 7, 8, 5, 6])
 
 def apply_bounce_back(f):
-    f_copy = f.copy()  # make it writeable
-    # Bounce-back on left boundary (x=0)
-    f = f.at[:, 1:-1, 0].set(f_copy[opposite, 1:-1, 0])
-    # Bounce-back on right boundary (x=-1)
-    f = f.at[:, 1:-1, -1].set(f_copy[opposite, 1:-1, -1])
-    # Bounce-back on bottom boundary (y=0)
-    f = f.at[:, 0, 1:-1].set(f_copy[opposite, 0, 1:-1])
-    # Bounce-back on top boundary (y=-1)
-    f = f.at[:, -1, 1:-1].set(f_copy[opposite, -1, 1:-1])
-    f = f.at[:, 0, 0].set(f[opposite, 0, 0])
-    f = f.at[:, -1, 0].set(f[opposite, -1, 0])
-    f = f.at[:, 0, -1].set(f[opposite, 0, -1])
-    f = f.at[:, -1, -1].set(f[opposite, -1, -1])
+    # Only interior boundary (exclude halos)
+    f = f.at[:, 1:-1, 1].set(f[opposite, 1:-1, 1])       # left edge
+    f = f.at[:, 1:-1, -2].set(f[opposite, 1:-1, -2])     # right edge
+    f = f.at[:, 1, 1:-1].set(f[opposite, 1, 1:-1])       # bottom edge
+
+    # # Corners if needed
+    f = f.at[:, 1, 1].set(f[opposite, 1, 1])             # bottom-left corner
+    f = f.at[:, 1, -2].set(f[opposite, 1, -2])           # bottom-right corner            # top-right corner
     return f
 
 def apply_top_lid_velocity(f, u_lid=jnp.array([-u_max, 0.0])):
-    rho_wall = (f[0, :, -1] + f[1, :, -1] + f[3, :, -1] +
-                2 * (f[4, :, -1] + f[7, :, -1] + f[8, :, -1]))
+    rho_wall = (f[0, 1:-1, -2] + f[1, 1:-1, -2] + f[3, 1:-1, -2] +
+                2 * (f[4, 1:-1, -2] + f[7, 1:-1, -2] + f[8, 1:-1, -2]))
     incoming = [2, 5, 6]
     for i in incoming:
         i_opp = opposite[i]
         ci_dot_u = c[0, i] * u_lid[0] + c[1, i] * u_lid[1]
-        correction = 6.0 * w[i] * rho_wall[1:-1] * ci_dot_u
-        f = f.at[i, 1:-1, -1].set(f[i_opp, 1:-1, -1] - correction)
-    return f
-
-def clamp_f(f):
-    f = jnp.where(jnp.isnan(f), 1e-12, f)  # Replace NaNs
-    f = jnp.maximum(f, 1e-12)                # Avoid negative or zero
+        correction = 6.0 * w[i] * rho_wall * ci_dot_u
+        f = f.at[i, 1:-1, -2].set(f[i_opp, 1:-1, -2] - correction)
+        f = jnp.maximum(f, 0.0)
     return f
 
 ix = jax.process_index() % px
 iy = jax.process_index() // px
-
 
 x_start = ix * local_NX
 y_start = iy * local_NY
@@ -155,65 +155,98 @@ rho0 = jnp.ones((local_NX, local_NY), dtype=dtype)
 v0 = jnp.zeros_like(u0)
 u_init = jnp.array([u0, v0])
 f0 = equilibrium(rho0, u_init).astype(dtype)
+# Start with interior equilibrium distribution
+f0_inner = equilibrium(rho0, u_init).astype(dtype)
+f0 = jnp.zeros((9, local_NX_halo, local_NY_halo), dtype=dtype)
+f0 = f0.at[:, 1:-1, 1:-1].set(f0_inner)
 
-f0 = jnp.pad(f0, ((0, 0), (1, 1), (1, 1)))  # Add halo in x and y
-# 🔍 Initial NaN diagnostics
-rho_test = jnp.einsum('ijk->jk', f0)
-rho_test = jnp.maximum(rho_test, 1e-6)
-u_test = jnp.einsum('ai,ixy->axy', c, f0) / rho_test
+# Initialize halos as copies of adjacent interior cells (simple zero-gradient BC for initialization)
+f0 = f0.at[:, 0, 1:-1].set(f0[:, 1, 1:-1])       # left halo
+f0 = f0.at[:, -1, 1:-1].set(f0[:, -2, 1:-1])     # right halo
+f0 = f0.at[:, 1:-1, 0].set(f0[:, 1:-1, 1])       # bottom halo
+f0 = f0.at[:, 1:-1, -1].set(f0[:, 1:-1, -2])     # top halo
 
-print(f"[Rank {rank}] Initial NaN diagnostics:")
-print("NaNs in f0:", jnp.isnan(f0).sum())
-print("NaNs in rho:", jnp.isnan(rho_test).sum())
-print("NaNs in u:", jnp.isnan(u_test).sum())
+# Corners (optional)
+f0 = f0.at[:, 0, 0].set(f0[:, 1, 1])
+f0 = f0.at[:, 0, -1].set(f0[:, 1, -2])
+f0 = f0.at[:, -1, 0].set(f0[:, -2, 1])
+f0 = f0.at[:, -1, -1].set(f0[:, -2, -2])
 
-print("Initial min/max values:")
-print("rho min/max:", rho_test.min(), rho_test.max())
-print("u min/max:", u_test.min(), u_test.max())
+ndx, ndy = px, py  # process grid dims
 
-def halo_exchange(f):
-    # Assume f shape is (9, NX_local + 2, NY_local + 2)
-    # Extract halo faces (interior edges)
-    send_left = f[:, 1, 1:-1]
-    send_right = f[:, -2, 1:-1]
-    send_down = f[:, 1:-1, 1]
-    send_up = f[:, 1:-1, -2]
+comm_cart = comm.Create_cart((ndx, ndy), periods=(False, False))
+left_src, left_dst = comm_cart.Shift(0, -1)
+right_src, right_dst = comm_cart.Shift(0, 1)
+bottom_src, bottom_dst = comm_cart.Shift(1, -1)
+top_src, top_dst = comm_cart.Shift(1, 1)
 
-    # Allocate buffers for receiving
-    recv_left = np.empty_like(send_left)
-    recv_right = np.empty_like(send_right)
-    recv_down = np.empty_like(send_down)
-    recv_up = np.empty_like(send_up)
+def communicate(f_ikl):
+    # f_ikl: shape (9, local_NX+2, local_NY+2), includes halos
+    
+    # Existing edge communication
+    comm_cart.Sendrecv(
+        sendbuf=np.array(f_ikl[:, 1, :]).copy(), dest=left_dst,
+        recvbuf=np.array(f_ikl[:, -1, :]), source=left_src
+    )
+    
+    comm_cart.Sendrecv(
+        sendbuf=np.array(f_ikl[:, -2, :]).copy(), dest=right_dst,
+        recvbuf=np.array(f_ikl[:, 0, :]), source=right_src
+    )
+    
+    comm_cart.Sendrecv(
+        sendbuf=np.array(f_ikl[:, :, 1]).copy(), dest=bottom_dst,
+        recvbuf=np.array(f_ikl[:, :, -1]), source=bottom_src
+    )
+    
+    comm_cart.Sendrecv(
+        sendbuf=np.array(f_ikl[:, :, -2]).copy(), dest=top_dst,
+        recvbuf=np.array(f_ikl[:, :, 0]), source=top_src
+    )
+        
+    # # Get process grid dims and current coordinates
+    # ndx, ndy = comm_cart.Get_topo()[0]
+    # rank = comm_cart.Get_rank()
+    # ix, iy = comm_cart.Get_coords(rank)
+    
+    # def in_domain(x, y):
+    #     return (0 <= x < ndx) and (0 <= y < ndy)
+    
+    # # Bottom-left corner
+    # bl_src = comm_cart.Get_cart_rank((ix - 1, iy - 1)) if in_domain(ix - 1, iy - 1) else MPI.PROC_NULL
+    # bl_dst = bl_src
+    # comm_cart.Sendrecv(
+    #     sendbuf=f_ikl[:, 1, 1].copy(), dest=bl_dst,
+    #     recvbuf=f_ikl[:, -1, -1], source=bl_src
+    # )
+    
+    # # Bottom-right corner
+    # br_src = comm_cart.Get_cart_rank((ix + 1, iy - 1)) if in_domain(ix + 1, iy - 1) else MPI.PROC_NULL
+    # br_dst = br_src
+    # comm_cart.Sendrecv(
+    #     sendbuf=f_ikl[:, 1, -2].copy(), dest=br_dst,
+    #     recvbuf=f_ikl[:, -1, 1], source=br_src
+    # )
+    
+    # # Top-left corner
+    # tl_src = comm_cart.Get_cart_rank((ix - 1, iy + 1)) if in_domain(ix - 1, iy + 1) else MPI.PROC_NULL
+    # tl_dst = tl_src
+    # comm_cart.Sendrecv(
+    #     sendbuf=f_ikl[:, -2, 1].copy(), dest=tl_dst,
+    #     recvbuf=f_ikl[:, 1, -1], source=tl_src
+    # )
+    
+    # # Top-right corner
+    # tr_src = comm_cart.Get_cart_rank((ix + 1, iy + 1)) if in_domain(ix + 1, iy + 1) else MPI.PROC_NULL
+    # tr_dst = tr_src
+    # comm_cart.Sendrecv(
+    #     sendbuf=f_ikl[:, -2, -2].copy(), dest=tr_dst,
+    #     recvbuf=f_ikl[:, 1, 1], source=tr_src
+    # )
+    
+    return f_ikl
 
-    # Neighbor process ranks
-    left = rank - 1 if ix > 0 else MPI.PROC_NULL
-    right = rank + 1 if ix < px - 1 else MPI.PROC_NULL
-    down = rank - px if iy > 0 else MPI.PROC_NULL
-    up = rank + px if iy < py - 1 else MPI.PROC_NULL
-
-    # Start non-blocking communication
-    reqs = []
-    reqs.append(comm.Isend(send_left, dest=left, tag=0))
-    reqs.append(comm.Isend(send_right, dest=right, tag=1))
-    reqs.append(comm.Isend(send_down, dest=down, tag=2))
-    reqs.append(comm.Isend(send_up, dest=up, tag=3))
-    reqs.append(comm.Irecv(recv_left, source=left, tag=1))
-    reqs.append(comm.Irecv(recv_right, source=right, tag=0))
-    reqs.append(comm.Irecv(recv_down, source=down, tag=3))
-    reqs.append(comm.Irecv(recv_up, source=up, tag=2))
-
-    # Wait for all to complete
-    MPI.Request.Waitall(reqs)
-
-    # Fill ghost cells using NumPy indexing (not JAX)
-    f = f.copy()  # make it writeable
-    f[:, 0, 1:-1] = recv_left
-    f[:, -1, 1:-1] = recv_right   
-    f[:, 1:-1, 0] = recv_down     
-    f[:, 1:-1, -1] = recv_up      
-
-    return f
-
+#  Device mesh setup (same as before)
 mesh = Mesh(mesh_utils.create_device_mesh((px, py)), axis_names=('x', 'y'))
 
 
@@ -221,54 +254,20 @@ with mesh:
     sharding = NamedSharding(mesh, P(None, 'x', 'y'))
     f = jax.device_put(f0, sharding)
 
-    def lbm_step(f):
-    # 1. Streaming step
-        f1 = clamp_f(stream(f))
-    
-    # 2. Collision step
-        f2, _ = collide(f1)
-        f2 = clamp_f(f2)
-    
-    # 3. Bounce-back boundary condition
-        f3 = clamp_f(apply_bounce_back(f2))
-    
-    # 4. Apply lid (moving wall) velocity boundary
-        f4 = clamp_f(apply_top_lid_velocity(f3))
-    
-        return f4
+    def lbm_collide_stream(f):
+        f, _ = collide(f)
+        f = stream(f)
+        f = apply_bounce_back(f)
+        f = apply_top_lid_velocity(f)
+        return f
 
-    
-    # Debug version of lbm_step
-    def debug_lbm_step(f, step=0, rank=0):
-        def check_nan(label, arr):
-            nan_count = jnp.isnan(arr).sum()
-            if nan_count > 0:
-                print(f"[Rank {rank}] NaNs in {label} at step {step}: {nan_count}")
-            return arr
-
-        f1 = stream(f)
-        check_nan("f after stream", f1)
-
-        f2, _ = collide(f1)
-        check_nan("f after collide", f2)
-
-        f3 = apply_bounce_back(f2)
-        check_nan("f after bounce-back", f3)
-
-        f4 = apply_top_lid_velocity(f3)
-        check_nan("f after top lid", f4)
-        return f4
-
-
-    lbm_step = pjit(
-        lbm_step,
+    lbm_collide_stream = pjit(
+        lbm_collide_stream,
         in_shardings=P(None, 'x', 'y'),
         out_shardings=P(None, 'x', 'y'),
     )
 
     print("Sharding info:", f.sharding)
-    # jax.debug.visualize_array_sharding(f.reshape(-1, f.shape[-1]))
-
 
     amp = []
     profiles = []
@@ -277,119 +276,107 @@ with mesh:
     start = time.time()
 
     for step in range(NSTEPS):
-        # ↓ Move data from device to host (JAX → NumPy)
-        f_host = jax.device_get(f)           # JAX → NumPy
+        # f, _ = collide(f)                          
+        # f = jnp.maximum(f, 0.0)  # Clamp to avoid negative values
 
-        # ↓ Perform MPI-based halo exchange on CPU
-        f_host = halo_exchange(f_host)
+        f_cpu = jax.device_get(f)            
+        f_cpu = communicate(f_cpu)           # Do MPI halo exchange
+        f = jax.device_put(f_cpu, f.sharding)  
 
-        # ↓ Move data back to device (NumPy → JAX)
-        f = jax.device_put(f_host)           # NumPy → JAX
+        f = lbm_collide_stream(f)      
 
-        # ↓ Perform JAX-accelerated LBM step (stream → collide → BC)
-        # f = lbm_step(f)
-        f = debug_lbm_step(f, step=step, rank=rank)
+        f = jnp.maximum(f, 0.0)
 
-        # print(f"Step {step}: f min={jnp.min(f):.2e}, max={jnp.max(f):.2e}, rho min={jnp.min(rho):.2e}, max={jnp.max(rho):.2e}, u min={jnp.min(u):.2e}, max={jnp.max(u):.2e}")
-
-
-        # --- Debug NaN check after first LBM step ---
-        if step == 0:
-            f_check = jax.device_get(f)
-            nan_count_post_step = np.isnan(f_check).sum()
-            print(f"[Rank {rank}] Post-step 0 NaN count: {nan_count_post_step}")
-            if nan_count_post_step > 0:
-                print("NaNs introduced in lbm_step!")
-                np.set_printoptions(precision=4, suppress=True, linewidth=140)
-                print("Sample slice of f with NaNs:\n", f_check[:, 200, 200])
-
-
-        # if jnp.isnan(f).any() or jnp.isnan(rho).any() or jnp.isnan(u).any():
-        #     print(f"NaNs detected at step {step}")
-        #     break
-
-        if step % 100 == 0:
-            nan_count_f = jnp.isnan(f).sum()
-            rho = jnp.einsum('ijk->jk', f)
-            nan_count_rho = jnp.isnan(rho).sum()
-
-            rho = jnp.maximum(rho, 1e-6)  # Prevent division by zero
-            u = jnp.einsum('ai,ixy->axy', c, f) / rho
-            nan_count_u = jnp.isnan(u).sum()
-            print(f"Step {step}: NaNs in f = {nan_count_f}, rho = {nan_count_rho}, u = {nan_count_u}")
-
+        if step % 20 == 0:
+            # rho = jnp.einsum('ijk->jk', f)
+            # u = jnp.einsum('ai,ixy->axy', c, f) / rho
+            rho = jnp.einsum('ijk->jk', f[:, 1:-1, 1:-1])
+            if jnp.any(rho <= 0):
+                print(f"Step {step}: Found non-positive density!")
+                print("Min rho:", rho.min())
+            u = jnp.einsum('ai,ixy->axy', c, f[:, 1:-1, 1:-1]) / rho
             # u_local = u.addressable_data(0)
-            u = u[:, 1:-1, 1:-1]  # remove halo before gathering
-            # u_gathered = multihost_utils.process_allgather(u)
-            # u_np = np.array(u_gathered)
-            # all_shards = comm.gather(u_np, root=0)
+            u_gathered = multihost_utils.process_allgather(u)
+            u_np = np.array(u_gathered)
+            all_shards = comm.gather(u_np, root=0)
 
-            u_global = multihost_utils.process_allgather(u)  # shape: (num_devices, 2, local_NX, local_NY)
-
+            total_rho = jnp.sum(rho)
+            total_rho_all = comm.reduce(total_rho, op=MPI.SUM, root=0)
 
             if rank == 0:
-                print("Gathered global u shape:", u_global.shape)
-                # print(f"Gathered {len(all_shards)} shards, expecting {size}")
-                # for i, shard in enumerate(all_shards):
-                #     print(f"Shard {i} shape: {shard.shape}")
+                
+                print(f"Gathered {len(all_shards)} shards, expecting {size}")
+
                 try:
                     # all_shards is a flat list of shape (2, local_NX, local_NY) for each process
                     # Reconstruct a (px, py) grid of velocity fields
                     ordered_grid = [[None for _ in range(px)] for _ in range(py)]
-                    for proc_id in range(size):
-                        shard = np.array(u_global[proc_id])
-                        ix = proc_id % px
-                        iy = proc_id // px
-                        ordered_grid[iy][ix] = shard
+                    for proc_id, shard in enumerate(all_shards):
+                        ix, iy = comm_cart.Get_coords(proc_id)  # Correct topology order
+                        ordered_grid[iy][ix] = shard  # shard shape: (2, local_NX, local_NY)
 
-                    # Concatenate along Y (axis=3), then X (axis=2)
-                    rows = [np.concatenate(row, axis=2) for row in ordered_grid]
-                    u_combined = np.concatenate(rows, axis=1)
+                     # Loop through horizontal neighbors (x-direction)
+                        for row in ordered_grid:
+                            for i in range(px - 1):
+                                right_edge = row[i][0][:, -1]  # Right edge of left domain
+                                left_edge = row[i+1][0][:, 0]  # Left edge of right domain
+                                diff = np.abs(right_edge - left_edge)
+                                print(f"Edge x-diff max: {np.max(diff):.2e}, mean: {np.mean(diff):.2e}")
 
-                    u_x = u_combined[0]
-                    u_y = u_combined[1]
+                    # Loop through vertical neighbors (y-direction)
+                        for i in range(py - 1):
+                            for j in range(px):
+                                bottom_edge = ordered_grid[i][j][1][-1, :]  # Bottom of upper domain
+                                top_edge = ordered_grid[i+1][j][1][0, :]     # Top of lower domain
+                                diff = np.abs(bottom_edge - top_edge)
+                                print(f"Edge y-diff max: {np.max(diff):.2e}, mean: {np.mean(diff):.2e}")
 
+                    # Concatenate along Y (axis=2) within rows, then along X (axis=1) across rows
+                    rows = [np.concatenate(row, axis=2) for row in ordered_grid]  # Y direction
+                    u_combined = np.concatenate(rows, axis=1)  # X direction
+
+                    # print(f"Reconstructed shape: {u_combined.shape}")
+                    # print("Final grid layout:")
+                    # for row in ordered_grid:
+                    #     print([shard.shape for shard in row])
+                    if u_combined.shape[0] == 1:
+                        u_combined = u_combined[0]
                     assert u_combined.shape == (2, NX, NY), f"u_combined.shape = {u_combined.shape}, expected (2, {NX}, {NY})"
-
-                    speed = np.sqrt(u_x**2 + u_y**2)
-                    print(f"Step {step}: top lid max u_x = {u_x[:, -1].max():.4f}")
-
-                    ix = min(NX // 2, u_x.shape[0] - 1)
-                    iy = min(NY // 8, u_x.shape[1] - 1)
-                    amp.append(u_x[ix, iy])
-                    profiles.append(u_x[NX // 2, :].copy())
-
-                    X, Y = np.meshgrid(np.arange(NY), np.arange(NX))
-                    xlim = (0, NY)
-                    ylim = (0, NX)
-
-
-                    plt.figure(figsize=(7, 6))
-                    plt.streamplot(X, Y, u_x.T, u_y.T, density=1.2, linewidth=1, arrowsize=1.5)
-                    plt.xlim(xlim)
-                    plt.ylim(ylim)
-                    plt.title(f'Lid-driven cavity flow (Steps:{step:05d})')
-                    plt.xlabel("X")
-                    plt.ylabel("Y")
-                    plt.axis("equal")
-                    plt.grid(True)
-                    plt.tight_layout()
-                    plt.savefig(f'frames/streamplot_{step:05d}.png')
-                    plt.close()
-
                 except Exception as e:
                     print("Concatenation failed:", e)
                     raise
 
-                # plt.figure(figsize=(6,5))
-                # plt.imshow(speed.T, origin='lower', cmap='plasma', extent=[0, NX, 0, NY])
-                # plt.colorbar(label='Speed')
-                # plt.title(f'Speed Magnitude at step {step}')
-                # plt.xlabel('X')
-                # plt.ylabel('Y')
-                # plt.tight_layout()
-                # plt.savefig(f'frames/speed_magnitude_{step:05d}.png')
-                # plt.close()
+                u_x = u_combined[0]
+                u_y = u_combined[1]
+
+                speed = np.sqrt(u_x**2 + u_y**2)
+                print(f"Step {step}: top lid max u_x = {u_x[:, -1].max():.4f}")
+                # print("u_x.shape:", u_x.shape)
+                # print(f"u_combined.shape = {u_combined.shape}")
+
+                ix = min(NX // 2, u_x.shape[0] - 1)
+                iy = min(NY // 8, u_x.shape[1] - 1)
+                amp.append(u_x[ix, iy])
+
+                profiles.append(u_x[NX // 2, :].copy())  # now safe!
+
+                # Meshgrid with correct dimensions for streamplot
+                X, Y = np.meshgrid(np.arange(NY), np.arange(NX))
+                xlim = (0, NY)
+                ylim = (0, NX)
+
+                plt.figure(figsize=(7, 6))
+                plt.streamplot(X, Y, u_x.T, u_y.T, density=1.2, linewidth=1, arrowsize=1.5)
+                plt.xlim(xlim)
+                plt.ylim(ylim)
+                plt.title(f'Lid-driven cavity flow (Steps:{step:05d})')
+                plt.xlabel("X")
+                plt.ylabel("Y")
+                plt.axis("equal")
+                plt.grid(True)
+                plt.tight_layout()
+                plt.savefig(f'frames/streamplot_{step:05d}.png')
+                plt.close()
 
     end = time.time()
 
@@ -407,7 +394,7 @@ if rank == 0:
     import imageio
     for prefix in ['streamplot']:
         with imageio.get_writer(f'{prefix}.gif', mode='I', duration=0.5) as writer:
-            for step in range(0, NSTEPS,100):
+            for step in range(0, NSTEPS,20):
                 filename = f'frames/{prefix}_{step:05d}.png'
                 if os.path.exists(filename):
                     image = imageio.imread(filename)
