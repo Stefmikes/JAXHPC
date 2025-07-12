@@ -184,8 +184,8 @@ ndx, ndy = px, py  # process grid dims
 
 comm_cart = comm.Create_cart((ndx, ndy), periods=(False, False))
 print(f"Rank {rank} coords: {comm_cart.Get_coords(rank)}")
-left_src, left_dst = comm_cart.Shift(0, 1)
-right_src, right_dst = comm_cart.Shift(0, -1)
+left_src, left_dst = comm_cart.Shift(0, -1)
+right_src, right_dst = comm_cart.Shift(0, 1)
 # bottom_src, bottom_dst = comm_cart.Shift(1, -1)
 # top_src, top_dst = comm_cart.Shift(1, 1)
 print(f"Rank {rank} neighbors: left_src={left_src}, right_src={right_src}")
