@@ -340,13 +340,13 @@ with mesh:
                     #             print(f"Edge y-diff max: {np.max(diff):.2e}, mean: {np.mean(diff):.2e}")
 
                     # # Concatenate along Y (axis=2) within rows, then along X (axis=1) across rows
-                    rows = [np.concatenate(row, axis=2) for row in ordered_grid]  # Y direction
-                    u_combined = np.concatenate(rows, axis=1)  # X direction
+                    # rows = [np.concatenate(row, axis=2) for row in ordered_grid]  # Y direction
+                    u_combined = np.concatenate(all_shards, axis=1)  # X direction
 
-                    # print(f"Reconstructed shape: {u_combined.shape}")
-                    # print("Final grid layout:")
-                    # for row in ordered_grid:
-                    #     print([shard.shape for shard in row])
+                    print(f"Reconstructed shape: {u_combined.shape}")
+                    print("Final grid layout:")
+                    for row in ordered_grid:
+                        print([shard.shape for shard in row])
                     if u_combined.shape[0] == 1:
                         u_combined = u_combined[0]
                     assert u_combined.shape == (2, NX, NY), f"u_combined.shape = {u_combined.shape}, expected (2, {NX}, {NY})"
