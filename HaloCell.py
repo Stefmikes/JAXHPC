@@ -41,7 +41,7 @@ print(f"JAX backend: {jax.default_backend()}")
 
 # ✅ Simulation parameters
 NX, NY = 300, 300
-NSTEPS = 30000
+NSTEPS = 10000
 omega = 0.16
 u_max = 0.1
 nu = (1 / omega - 0.5) / 3
@@ -90,9 +90,6 @@ def equilibrium(rho, u):
     wrho = jnp.einsum('i,xy->ixy', w, rho)
     return wrho * (1 + cdot3u * (1 + 0.5 * cdot3u) - 1.5 * usq[jnp.newaxis, :, :])
 
-def print_warning(_):
-    return None
-
 @jax.jit
 def collide(g):
     # eps = 1e-12
@@ -103,34 +100,34 @@ def collide(g):
 
 shifts = [(int(c[0, i]), int(c[1, i])) for i in range(9)]
 
-# @jax.jit
-# def stream(f):
-#     f_new = jnp.zeros_like(f)
-#     for i in range(9):
-#         dx, dy = shifts[i]
-#         f_new = f_new.at[i].set(jnp.roll(f[i], shift=(dx, dy), axis=(0,1)))
-#     return f_new
 @jax.jit
 def stream(f):
     f_new = jnp.zeros_like(f)
     for i in range(9):
         dx, dy = shifts[i]
-        shifted = f[i]
-        if dx == 1:
-            shifted = shifted[:-1, :]
-            f_new = f_new.at[i, 1:, :].set(shifted)
-        elif dx == -1:
-            shifted = shifted[1:, :]
-            f_new = f_new.at[i, :-1, :].set(shifted)
-        elif dy == 1:
-            shifted = shifted[:, :-1]
-            f_new = f_new.at[i, :, 1:].set(shifted)
-        elif dy == -1:
-            shifted = shifted[:, 1:]
-            f_new = f_new.at[i, :, :-1].set(shifted)
-        else:
-            f_new = f_new.at[i].set(f[i])  # No shift
+        f_new = f_new.at[i].set(jnp.roll(f[i], shift=(dx, dy), axis=(0,1)))
     return f_new
+# @jax.jit
+# def stream(f):
+#     f_new = jnp.zeros_like(f)
+#     for i in range(9):
+#         dx, dy = shifts[i]
+#         shifted = f[i]
+#         if dx == 1:
+#             shifted = shifted[:-1, :]
+#             f_new = f_new.at[i, 1:, :].set(shifted)
+#         elif dx == -1:
+#             shifted = shifted[1:, :]
+#             f_new = f_new.at[i, :-1, :].set(shifted)
+#         elif dy == 1:
+#             shifted = shifted[:, :-1]
+#             f_new = f_new.at[i, :, 1:].set(shifted)
+#         elif dy == -1:
+#             shifted = shifted[:, 1:]
+#             f_new = f_new.at[i, :, :-1].set(shifted)
+#         else:
+#             f_new = f_new.at[i].set(f[i])  # No shift
+#     return f_new
 
 opposite = jnp.array([0, 3, 4, 1, 2, 7, 8, 5, 6])
 
@@ -141,8 +138,10 @@ def apply_bounce_back(f):
     f = f.at[:, 1, 1:-1].set(f[opposite, 1, 1:-1])       # bottom edge
 
     # # Corners if needed
+    f = f.at[:, -2, 1].set(f[opposite, -2, 1])           # top-left corner
+    f = f.at[:, -2, -2].set(f[opposite, -2, -2])         # top-right corner
     f = f.at[:, 1, 1].set(f[opposite, 1, 1])             # bottom-left corner
-    f = f.at[:, 1, -2].set(f[opposite, 1, -2])           # bottom-right corner            # top-right corner
+    f = f.at[:, 1, -2].set(f[opposite, 1, -2])           # bottom-right corner            
     return f
 
 def apply_top_lid_velocity(f, u_lid=jnp.array([-u_max, 0.0])):
@@ -226,21 +225,21 @@ def communicate(f_ikl):
 
     requests = []
 
-    if left_src != MPI.PROC_NULL:
+    if left_src >= 0:
         req_send_left = comm_cart.Isend(send_left, dest=left_dst)
         req_recv_left = comm_cart.Irecv(recv_left, source=left_src)
         requests.extend([req_send_left, req_recv_left])
 
-    if right_src != MPI.PROC_NULL:
+    if right_src >= 0:
         req_send_right = comm_cart.Isend(send_right, dest=right_dst)
         req_recv_right = comm_cart.Irecv(recv_right, source=right_src)
         requests.extend([req_send_right, req_recv_right])
 
     MPI.Request.Waitall(requests)
 
-    if left_src != MPI.PROC_NULL:
+    if left_src >=0:
         f_np[:, 0, :] = recv_left
-    if right_src != MPI.PROC_NULL:
+    if right_src >=0:
         f_np[:, -1, :] = recv_right
 
     return jnp.array(f_np)
@@ -278,6 +277,33 @@ with mesh:
 
     print("Sharding info:", f.sharding)
 
+    def gather_velocity_field(rank, comm, comm_cart, u_np_local, local_NX, local_NY, NX, NY):
+
+    # Gather all local velocity fields to root
+        all_shards = comm.gather(u_np_local, root=0)
+
+        if rank != 0:
+            return None  # Only root reconstructs
+
+    # Initialize full field
+        u_combined = np.zeros((2, NX, NY), dtype=u_np_local.dtype)
+
+        for r, shard in enumerate(all_shards):
+            coords = comm_cart.Get_coords(r)
+            i_start = coords[0] * local_NX
+            j_start = coords[1] * local_NY
+
+        # Sanity check on shape
+        while shard.ndim > 3:
+            shard = shard[0]
+        assert shard.shape == (2, local_NX, local_NY), f"Rank {r} shard shape mismatch: {shard.shape}"
+
+        # Place the shard in the full array
+        u_combined[:, i_start:i_start + local_NX, j_start:j_start + local_NY] = shard
+
+        return u_combined
+
+
     amp = []
     profiles = []
     os.makedirs("frames", exist_ok=True)
@@ -285,17 +311,14 @@ with mesh:
     start = time.time()
 
     for step in range(NSTEPS):
-        # f, _ = collide(f)                          
-        # f = jnp.maximum(f, 0.0)  # Clamp to avoid negative values
-
         f_cpu = f.addressable_data(0)  # Get CPU array for MPI communication            
                 
         if step % 100 == 0:
-            f_cpu_before = np.array(f.addressable_data(0))  # shape: (9, local_NX+2, local_NY+2)
-            print(f"[Rank {rank}] Step {step} LEFT halo before:", f_cpu_before[:, 0, local_NY // 2])
-            print(f"[Rank {rank}] Step {step} RIGHT halo before:", f_cpu_before[:, -1, local_NY // 2])
+            print(f"[Rank {rank}] Step {step} LEFT halo before:", f_cpu[:, 0, local_NY // 2])
+            print(f"[Rank {rank}] Step {step} RIGHT halo before:", f_cpu[:, -1, local_NY // 2])
 
-        f_cpu = communicate(f_cpu)
+        if size> 1:
+            f_cpu = communicate(f_cpu)
 
         if step % 100 == 0:
             print(f"[Rank {rank}] Step {step} LEFT halo after:", f_cpu[:, 0, local_NY // 2])
@@ -305,49 +328,23 @@ with mesh:
 
         f = lbm_collide_stream(f)      
 
-        f = jnp.maximum(f, 0.0)
-
         if step % 100 == 0:
             rho = jnp.einsum('ijk->jk', f[:, 1:-1, 1:-1])
             u = jnp.einsum('ai,ixy->axy', c, f[:, 1:-1, 1:-1]) / rho
-            # u_local = u.addressable_data(0)
-            u_gathered = multihost_utils.process_allgather(u)
-            u_np = np.array(u_gathered)
-            all_shards = comm.gather(u_np, root=0)
+            # u_gathered = multihost_utils.process_allgather(u)
+            # u_np = np.array(u_gathered)
+            # all_shards = comm.gather(u_np, root=0)
+
+            u_np_local = np.array(multihost_utils.process_allgather(u))
+            u_combined = gather_velocity_field(rank, comm, comm_cart, u_np_local, local_NX, local_NY, NX, NY)
 
             if rank == 0:
-                
-                print(f"Gathered {len(all_shards)} shards, expecting {size}")
-
-                try:
-                    
-                    # Normalize shard shapes
-                    normalized_shards = []
-                    for shard in all_shards:
-                        while shard.ndim > 3:
-                            shard = shard[0]  # strip excess batch dim
-                        assert shard.shape[0] == 2, f"Unexpected shard shape: {shard.shape}"
-                        normalized_shards.append(shard)
-
-                    # Concatenate along sharded axis (X)
-                    u_combined = np.concatenate(normalized_shards, axis=1)
-
-               
-                    print(f"Reconstructed shape: {u_combined.shape}")
-                    assert u_combined.shape == (2, NX, NY), \
-                        f"u_combined.shape = {u_combined.shape}, expected (2, {NX}, {NY})"
-
-                except Exception as e:
-                    print("Concatenation failed:", e)
-                    raise
 
                 u_x = u_combined[0]
                 u_y = u_combined[1]
 
                 speed = np.sqrt(u_x**2 + u_y**2)
                 print(f"Step {step}: top lid max u_x = {u_x[:, -1].max():.4f}")
-                # print("u_x.shape:", u_x.shape)
-                # print(f"u_combined.shape = {u_combined.shape}")
 
                 ix = min(NX // 2, u_x.shape[0] - 1)
                 iy = min(NY // 8, u_x.shape[1] - 1)
