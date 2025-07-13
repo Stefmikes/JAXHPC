@@ -231,33 +231,44 @@ is_bottom_edge = jnp.array(is_bottom_edge, dtype=bool)
 is_top_edge = jnp.array(is_top_edge, dtype=bool)
 
 def communicate(f_ikl):
-    f_np = np.array(f_ikl)  # Convert from JAX to NumPy
+    f_np = np.array(f_ikl)
 
-    # Create temporary contiguous buffers for receive
     recv_left = np.empty_like(f_np[:, -1, :])
     recv_right = np.empty_like(f_np[:, 0, :])
     recv_bottom = np.empty_like(f_np[:, :, -1])
     recv_top = np.empty_like(f_np[:, :, 0])
 
-    # X-direction communication (left and right)
-    comm.Sendrecv(sendbuf=f_np[:, 1, :].copy(), dest=left_dst,
-                  recvbuf=recv_left, source=left_src)
-    comm.Sendrecv(sendbuf=f_np[:, -2, :].copy(), dest=right_dst,
-                  recvbuf=recv_right, source=right_src)
+    if left_src != MPI.PROC_NULL:
+        comm.Sendrecv(sendbuf=f_np[:, 1, :].copy(), dest=left_dst,
+                      recvbuf=recv_left, source=left_src)
+        f_np[:, -1, :] = recv_left
+    else:
+        # Edge process — apply boundary condition (e.g., zero-gradient)
+        f_np[:, -1, :] = f_np[:, -2, :]
 
-    # Y-direction communication (bottom and top)
-    comm.Sendrecv(sendbuf=f_np[:, :, 1].copy(), dest=bottom_dst,
-                  recvbuf=recv_bottom, source=bottom_src)
-    comm.Sendrecv(sendbuf=f_np[:, :, -2].copy(), dest=top_dst,
-                  recvbuf=recv_top, source=top_src)
+    if right_src != MPI.PROC_NULL:
+        comm.Sendrecv(sendbuf=f_np[:, -2, :].copy(), dest=right_dst,
+                      recvbuf=recv_right, source=right_src)
+        f_np[:, 0, :] = recv_right
+    else:
+        f_np[:, 0, :] = f_np[:, 1, :]
 
-    # Set the halo regions with received data
-    f_np[:, -1, :] = recv_left
-    f_np[:, 0, :] = recv_right
-    f_np[:, :, -1] = recv_bottom
-    f_np[:, :, 0] = recv_top
+    if bottom_src != MPI.PROC_NULL:
+        comm.Sendrecv(sendbuf=f_np[:, :, 1].copy(), dest=bottom_dst,
+                      recvbuf=recv_bottom, source=bottom_src)
+        f_np[:, :, -1] = recv_bottom
+    else:
+        f_np[:, :, -1] = f_np[:, :, -2]
+
+    if top_src != MPI.PROC_NULL:
+        comm.Sendrecv(sendbuf=f_np[:, :, -2].copy(), dest=top_dst,
+                      recvbuf=recv_top, source=top_src)
+        f_np[:, :, 0] = recv_top
+    else:
+        f_np[:, :, 0] = f_np[:, :, 1]
 
     return jnp.array(f_np)
+
 
     # LEFT-RIGHT communication
     # send_to_left = f_np[:, 1, :].copy()    # left inner boundary (index 1)
