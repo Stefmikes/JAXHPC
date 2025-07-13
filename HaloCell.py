@@ -233,6 +233,8 @@ is_top_edge = jnp.array(is_top_edge, dtype=bool)
 def communicate(f_ikl):
     f_np = np.array(f_ikl)
 
+    print(f"Process {rank} communicating with neighbors:")
+
     recv_left = np.empty_like(f_np[:, -1, :])
     recv_right = np.empty_like(f_np[:, 0, :])
     recv_bottom = np.empty_like(f_np[:, :, -1])
