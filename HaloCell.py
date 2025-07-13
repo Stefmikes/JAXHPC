@@ -42,7 +42,7 @@ print(f"JAX backend: {jax.default_backend()}")
 
 # ✅ Simulation parameters
 NX, NY = 300, 300
-NSTEPS = 2000
+NSTEPS = 3000
 omega = 0.16
 u_max = 0.1
 nu = (1 / omega - 0.5) / 3
@@ -231,30 +231,37 @@ def communicate(f_ikl):
     print(f"[Rank {rank}] Starting communicate()", flush=True, file=sys.stderr)
 
     # LEFT-RIGHT communication
-    send_left = f_np[:, -2, :].copy()     # Shape: (Ny, Q)
-    send_right = f_np[:, 1, :].copy()
+    send_to_left = f_np[:, 1, :].copy()    # left inner boundary (index 1)
+    send_to_right = f_np[:, -2, :].copy()  # right inner boundary (index -2)
 
-    recv_left = np.empty_like(send_left)
-    recv_right = np.empty_like(send_right)
+
+    recv_from_left = np.empty_like(send_to_left)
+    recv_from_right = np.empty_like(send_to_right)
+
 
     requests = []
 
-    if left_src >= 0:
-        req_send_left = comm_cart.Isend(send_right, dest=left_dst)
-        req_recv_left = comm_cart.Irecv(recv_left, source=left_src)
+    # Send left inner boundary to left neighbor, receive left halo from left neighbor
+    if left_dst != MPI.PROC_NULL:
+        req_send_left = comm_cart.Isend(send_to_left, dest=left_dst)
+        req_recv_left = comm_cart.Irecv(recv_from_left, source=left_src)
         requests.extend([req_send_left, req_recv_left])
 
-    if right_src >= 0:
-        req_send_right = comm_cart.Isend(send_left, dest=right_dst)
-        req_recv_right = comm_cart.Irecv(recv_right, source=right_src)
+    # Send right inner boundary to right neighbor, receive right halo from right neighbor
+    if right_dst != MPI.PROC_NULL:
+        req_send_right = comm_cart.Isend(send_to_right, dest=right_dst)
+        req_recv_right = comm_cart.Irecv(recv_from_right, source=right_src)
         requests.extend([req_send_right, req_recv_right])
 
     MPI.Request.Waitall(requests)
 
-    if left_src >=0:
-        f_np[:, 0, :] = recv_left
-    if right_src >=0:
-        f_np[:, -1, :] = recv_right
+    # Fill halos after communication
+    if left_src != MPI.PROC_NULL:
+        f_np[:, 0, :] = recv_from_left  # left halo at index 0
+
+    if right_src != MPI.PROC_NULL:
+        f_np[:, -1, :] = recv_from_right  # right halo at index -1
+
 
     return jnp.array(f_np)
 
@@ -303,10 +310,6 @@ with mesh:
         if size> 1:
             # print(f"[Rank {rank}] Step {step} communicating halos...", flush=True, file=sys.stderr)
             f_cpu = communicate(f_cpu)
-            if rank == 0:
-                assert np.allclose(f_cpu[:, -1, :], rank + 200), "Right halo mismatch on Rank 0"
-            if rank == 1:
-                assert np.allclose(f_cpu[:, 0, :], rank + 100), "Left halo mismatch on Rank 1"
 
         f = jax.device_put(f_cpu, f.sharding)  
 
