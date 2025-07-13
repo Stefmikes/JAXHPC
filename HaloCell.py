@@ -42,7 +42,7 @@ print(f"JAX backend: {jax.default_backend()}")
 
 # ✅ Simulation parameters
 NX, NY = 300, 300
-NSTEPS = 4000
+NSTEPS = 3000
 omega = 0.16
 u_max = 0.1
 nu = (1 / omega - 0.5) / 3
@@ -127,15 +127,15 @@ def corner_bottom_right(f):
 
 
 def apply_bounce_back(f, is_left, is_right, is_bottom):
-    f = jax.lax.cond(is_left, lambda f: bounce_from_left(f), lambda f: f, f)
-    f = jax.lax.cond(is_right, lambda f: bounce_from_right(f), lambda f: f, f)
+    # f = jax.lax.cond(is_left, lambda f: bounce_from_left(f), lambda f: f, f)
+    # f = jax.lax.cond(is_right, lambda f: bounce_from_right(f), lambda f: f, f)
     f = jax.lax.cond(is_bottom, lambda f: bounce_from_bottom(f), lambda f: f, f)
    
     # Only apply corners if at corresponding edges, to avoid out-of-bound errors
-    f = jax.lax.cond(is_left & is_top_edge, corner_top_left, lambda f: f, f)
-    f = jax.lax.cond(is_right & is_top_edge, corner_top_right, lambda f: f, f)
-    f = jax.lax.cond(is_left & is_bottom, corner_bottom_left, lambda f: f, f)
-    f = jax.lax.cond(is_right & is_bottom, corner_bottom_right, lambda f: f, f)
+    # f = jax.lax.cond(is_left & is_top_edge, corner_top_left, lambda f: f, f)
+    # f = jax.lax.cond(is_right & is_top_edge, corner_top_right, lambda f: f, f)
+    # f = jax.lax.cond(is_left & is_bottom, corner_bottom_left, lambda f: f, f)
+    # f = jax.lax.cond(is_right & is_bottom, corner_bottom_right, lambda f: f, f)
     return f
 
 def apply_top_lid_velocity(f, is_top, u_lid=jnp.array([-u_max, 0.0])):
@@ -273,9 +273,7 @@ def communicate(f_ikl):
         req_recv_right = comm_cart.Irecv(recv_from_right, source=right_src)
         requests.append(req_recv_right)
 
-    print(f"[Rank {rank}] Before MPI.Waitall", flush=True)
     MPI.Request.Waitall(requests)
-    print(f"[Rank {rank}] After MPI.Waitall", flush=True)
     # Fill halos after communication
     if left_src != MPI.PROC_NULL:
         f_np[:, 0, :] = recv_from_left  # left halo at index 0
@@ -354,7 +352,6 @@ with mesh:
             if rank == 0:
 
                 try:
-                    
                     # Normalize shard shapes
                     normalized_shards = []
                     for shard in all_shards:
