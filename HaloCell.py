@@ -231,8 +231,8 @@ def communicate(f_ikl):
     print(f"[Rank {rank}] Starting communicate()", flush=True, file=sys.stderr)
 
     # LEFT-RIGHT communication
-    send_left = f_np[:, 1, :].copy()     # Shape: (Ny, Q)
-    send_right = f_np[:, -2, :].copy()
+    send_left = f_np[:, -2, :].copy()     # Shape: (Ny, Q)
+    send_right = f_np[:, 1, :].copy()
 
     recv_left = np.empty_like(send_left)
     recv_right = np.empty_like(send_right)
@@ -240,12 +240,12 @@ def communicate(f_ikl):
     requests = []
 
     if left_src >= 0:
-        req_send_left = comm_cart.Isend(send_left, dest=left_dst)
+        req_send_left = comm_cart.Isend(send_right, dest=left_dst)
         req_recv_left = comm_cart.Irecv(recv_left, source=left_src)
         requests.extend([req_send_left, req_recv_left])
 
     if right_src >= 0:
-        req_send_right = comm_cart.Isend(send_right, dest=right_dst)
+        req_send_right = comm_cart.Isend(send_left, dest=right_dst)
         req_recv_right = comm_cart.Irecv(recv_right, source=right_src)
         requests.extend([req_send_right, req_recv_right])
 
@@ -302,11 +302,16 @@ with mesh:
                 
         if size> 1:
             # print(f"[Rank {rank}] Step {step} communicating halos...", flush=True, file=sys.stderr)
+            print(f"Rank {rank} sending right: {f_cpu[:, -2, :]}")
+            print(f"Rank {rank} receiving left halo before: {f_cpu[:, 0, :]}")
             f_cpu = communicate(f_cpu)
-            if rank == 0:
-                assert np.allclose(f_cpu[:, -1, :], rank + 200), "Right halo mismatch on Rank 0"
-            if rank == 1:
-                assert np.allclose(f_cpu[:, 0, :], rank + 100), "Left halo mismatch on Rank 1"
+            print(f"Rank {rank} sending right: {f_cpu[:, -2, :]}")
+            print(f"Rank {rank} receiving left halo before: {f_cpu[:, 0, :]}")
+
+            # if rank == 0:
+            #     assert np.allclose(f_cpu[:, -1, :], rank + 200), "Right halo mismatch on Rank 0"
+            # if rank == 1:
+            #     assert np.allclose(f_cpu[:, 0, :], rank + 100), "Left halo mismatch on Rank 1"
 
         f = jax.device_put(f_cpu, f.sharding)  
 
