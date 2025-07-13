@@ -42,7 +42,7 @@ print(f"JAX backend: {jax.default_backend()}")
 
 # ✅ Simulation parameters
 NX, NY = 300, 300
-NSTEPS = 3000
+NSTEPS = 10000
 omega = 0.16
 u_max = 0.1
 nu = (1 / omega - 0.5) / 3
@@ -228,7 +228,7 @@ is_top_edge = jnp.array(is_top_edge, dtype=bool)
 def communicate(f_ikl):
     f_np = np.array(f_ikl)  # Ensure correct type
 
-    print(f"[Rank {rank}] Starting communicate()", flush=True, file=sys.stderr)
+    # print(f"[Rank {rank}] Starting communicate()", flush=True, file=sys.stderr)
 
     # LEFT-RIGHT communication
     send_to_left = f_np[:, 1, :].copy()    # left inner boundary (index 1)
@@ -310,6 +310,14 @@ with mesh:
         if size> 1:
             # print(f"[Rank {rank}] Step {step} communicating halos...", flush=True, file=sys.stderr)
             f_cpu = communicate(f_cpu)
+            if not is_left_edge:
+                diff_left = jnp.abs(f[:,1,:] - f[:,0,:])  # inner vs received halo
+                print(f"[Rank {rank}] Max left halo mismatch: {diff_left.max()}")
+
+            # For right boundary
+            if not is_right_edge:
+                diff_right = jnp.abs(f[:,-2,:] - f[:,-1,:])  # inner vs received halo
+                print(f"[Rank {rank}] Max right halo mismatch: {diff_right.max()}")
 
         f = jax.device_put(f_cpu, f.sharding)  
 
