@@ -302,16 +302,11 @@ with mesh:
                 
         if size> 1:
             # print(f"[Rank {rank}] Step {step} communicating halos...", flush=True, file=sys.stderr)
-            print(f"Rank {rank} sending right: {f_cpu[:, -2, :]}")
-            print(f"Rank {rank} receiving left halo before: {f_cpu[:, 0, :]}")
             f_cpu = communicate(f_cpu)
-            print(f"Rank {rank} sending right: {f_cpu[:, -2, :]}")
-            print(f"Rank {rank} receiving left halo before: {f_cpu[:, 0, :]}")
-
-            # if rank == 0:
-            #     assert np.allclose(f_cpu[:, -1, :], rank + 200), "Right halo mismatch on Rank 0"
-            # if rank == 1:
-            #     assert np.allclose(f_cpu[:, 0, :], rank + 100), "Left halo mismatch on Rank 1"
+            if rank == 0:
+                assert np.allclose(f_cpu[:, -1, :], rank + 200), "Right halo mismatch on Rank 0"
+            if rank == 1:
+                assert np.allclose(f_cpu[:, 0, :], rank + 100), "Left halo mismatch on Rank 1"
 
         f = jax.device_put(f_cpu, f.sharding)  
 
