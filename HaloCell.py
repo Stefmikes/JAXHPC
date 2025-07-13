@@ -7,6 +7,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 from jax.experimental import mesh_utils, multihost_utils  
 from jax.sharding import Mesh, PartitionSpec as P, NamedSharding
 from jax.experimental.pjit import pjit
@@ -40,8 +41,8 @@ print(f"Process {jax.process_index()} on {socket.gethostname()} using {jax.local
 print(f"JAX backend: {jax.default_backend()}")
 
 # ✅ Simulation parameters
-NX, NY = 3000, 3000
-NSTEPS = 5000
+NX, NY = 300, 300
+NSTEPS = 2000
 omega = 0.16
 u_max = 0.1
 nu = (1 / omega - 0.5) / 3
@@ -92,7 +93,6 @@ def equilibrium(rho, u):
 
 @jax.jit
 def collide(g):
-    # eps = 1e-12
     rho = jnp.einsum('ijk->jk', g)
     u = jnp.einsum('ai,ixy->axy', c, g) / rho
     feq = equilibrium(rho, u)
@@ -107,27 +107,6 @@ def stream(f):
         dx, dy = shifts[i]
         f_new = f_new.at[i].set(jnp.roll(f[i], shift=(dx, dy), axis=(0,1)))
     return f_new
-# @jax.jit
-# def stream(f):
-#     f_new = jnp.zeros_like(f)
-#     for i in range(9):
-#         dx, dy = shifts[i]
-#         shifted = f[i]
-#         if dx == 1:
-#             shifted = shifted[:-1, :]
-#             f_new = f_new.at[i, 1:, :].set(shifted)
-#         elif dx == -1:
-#             shifted = shifted[1:, :]
-#             f_new = f_new.at[i, :-1, :].set(shifted)
-#         elif dy == 1:
-#             shifted = shifted[:, :-1]
-#             f_new = f_new.at[i, :, 1:].set(shifted)
-#         elif dy == -1:
-#             shifted = shifted[:, 1:]
-#             f_new = f_new.at[i, :, :-1].set(shifted)
-#         else:
-#             f_new = f_new.at[i].set(f[i])  # No shift
-#     return f_new
 
 opposite = jnp.array([0, 3, 4, 1, 2, 7, 8, 5, 6])
 
@@ -135,31 +114,28 @@ def bounce_from_left(f):
     return f.at[:, 1:-1, 1].set(f[opposite, 1:-1, 1])
 def bounce_from_right(f):
     return f.at[:, 1:-1, -2].set(f[opposite, 1:-1, -2])
-
 def bounce_from_bottom(f):
     return f.at[:, 1, 1:-1].set(f[opposite, 1, 1:-1])
+def corner_top_left(f):
+    return f.at[:, 1, -2].set(f[opposite, 1, -2])
+def corner_top_right(f):
+    return f.at[:, -2, -2].set(f[opposite, -2, -2])
+def corner_bottom_left(f):
+    return f.at[:, 1, 1].set(f[opposite, 1, 1])
+def corner_bottom_right(f):
+    return f.at[:, -2, 1].set(f[opposite, -2, 1])
+
 
 def apply_bounce_back(f, is_left, is_right, is_bottom):
     f = jax.lax.cond(is_left, lambda f: bounce_from_left(f), lambda f: f, f)
     f = jax.lax.cond(is_right, lambda f: bounce_from_right(f), lambda f: f, f)
     f = jax.lax.cond(is_bottom, lambda f: bounce_from_bottom(f), lambda f: f, f)
-   # Corners bounce-back (only if these edges exist on this rank)
-    def corners_bc(f):
-        # Top-left corner (x=1, y=-2)
-        f = f.at[:, 1, -2].set(f[opposite, 1, -2])
-        # Top-right corner (x=-2, y=-2)
-        f = f.at[:, -2, -2].set(f[opposite, -2, -2])
-        # Bottom-left corner (x=1, y=1)
-        f = f.at[:, 1, 1].set(f[opposite, 1, 1])
-        # Bottom-right corner (x=-2, y=1)
-        f = f.at[:, -2, 1].set(f[opposite, -2, 1])
-        return f
-
+   
     # Only apply corners if at corresponding edges, to avoid out-of-bound errors
-    f = jax.lax.cond(is_left & is_top_edge, corners_bc, lambda f: f, f)
-    f = jax.lax.cond(is_right & is_top_edge, corners_bc, lambda f: f, f)
-    f = jax.lax.cond(is_left & is_bottom, corners_bc, lambda f: f, f)
-    f = jax.lax.cond(is_right & is_bottom, corners_bc, lambda f: f, f)          # bottom-right corner            
+    f = jax.lax.cond(is_left & is_top_edge, corner_top_left, lambda f: f, f)
+    f = jax.lax.cond(is_right & is_top_edge, corner_top_right, lambda f: f, f)
+    f = jax.lax.cond(is_left & is_bottom, corner_bottom_left, lambda f: f, f)
+    f = jax.lax.cond(is_right & is_bottom, corner_bottom_right, lambda f: f, f)
     return f
 
 def apply_top_lid_velocity(f, is_top, u_lid=jnp.array([-u_max, 0.0])):
@@ -175,7 +151,7 @@ def apply_top_lid_velocity(f, is_top, u_lid=jnp.array([-u_max, 0.0])):
             ci_dot_u = c[0, i_] * u_lid[0] + c[1, i_] * u_lid[1]
             correction = 6.0 * w[i_] * rho_wall * ci_dot_u
             f = f.at[i_, 1:-1, -2].set(f[i_opp, 1:-1, -2] - correction)
-            f = jnp.maximum(f, 0.0)
+            # f = jnp.maximum(f, 0.0)
             return f
 
         f = jax.lax.fori_loop(0, len(incoming), body, f)
@@ -242,7 +218,7 @@ print(f"Rank {rank} neighbors: left_src={left_src}, right_src={right_src}")
 is_left_edge = coords[0] == 0
 is_right_edge = coords[0] == px - 1
 is_bottom_edge = coords[1] == 0
-is_top_edge = coords[1] == py - 1  # Currently py = 1, so always True
+is_top_edge = True #coords[1] == py - 1  # Currently py = 1, so always True
 
 is_left_edge = jnp.array(is_left_edge, dtype=bool)
 is_right_edge = jnp.array(is_right_edge, dtype=bool)
@@ -252,7 +228,7 @@ is_top_edge = jnp.array(is_top_edge, dtype=bool)
 def communicate(f_ikl):
     f_np = np.array(f_ikl)  # Ensure correct type
 
-    # print(f"[Rank {rank}] Starting communicate()", flush=True, file=sys.stderr)
+    print(f"[Rank {rank}] Starting communicate()", flush=True, file=sys.stderr)
 
     # LEFT-RIGHT communication
     send_left = f_np[:, 1, :].copy()     # Shape: (Ny, Q)
@@ -315,31 +291,6 @@ with mesh:
 
     print("Sharding info:", f.sharding)
 
-    # def gather_velocity_field(rank, comm, comm_cart, u_np_local, local_NX, local_NY, NX, NY):
-    # # Gather all local velocity fields to root
-    #     all_shards = comm.gather(u_np_local, root=0)
-    #     if rank != 0:
-    #         return None  # Only root reconstructs
-
-    
-    #     u_combined = np.zeros((2, NX, NY), dtype=u_np_local.dtype)
-
-    #     for r, shard in enumerate(all_shards):
-    #         coords = comm_cart.Get_coords(r)
-    #         i_start = coords[0] * local_NX
-    #         j_start = coords[1] * local_NY
-
-    #     # Sanity check on shape
-    #     while shard.ndim > 3:
-    #         shard = shard[0]
-    #     assert shard.shape == (2, local_NX, local_NY), f"Rank {r} shard shape mismatch: {shard.shape}"
-
-    #     # Place the shard in the full array
-    #     u_combined[:, i_start:i_start + local_NX, j_start:j_start + local_NY] = shard
-    
-    #     return u_combined
-
-
     amp = []
     profiles = []
     os.makedirs("frames", exist_ok=True)
@@ -352,6 +303,10 @@ with mesh:
         if size> 1:
             # print(f"[Rank {rank}] Step {step} communicating halos...", flush=True, file=sys.stderr)
             f_cpu = communicate(f_cpu)
+            if rank == 0:
+                assert np.allclose(f_cpu[:, -1, :], rank + 200), "Right halo mismatch on Rank 0"
+            if rank == 1:
+                assert np.allclose(f_cpu[:, 0, :], rank + 100), "Left halo mismatch on Rank 1"
 
         f = jax.device_put(f_cpu, f.sharding)  
 
@@ -363,15 +318,6 @@ with mesh:
             u_gathered = multihost_utils.process_allgather(u)
             u_np = np.array(u_gathered)
             all_shards = comm.gather(u_np, root=0)
-
-            # u_np_local = np.array(multihost_utils.process_allgather(u))
-            # # Trim extra leading dimensions
-            # while u_np_local.ndim > 3:
-            #     u_np_local = u_np_local[0]
-            # assert u_np_local.shape == (2, local_NX, local_NY), f"Shape mismatch: {u_np_local.shape}"
-            # print(f"[Rank {rank}] local u shape: {u.shape}, after allgather: {u_np_local.shape}", flush=True)
-
-            # u_combined = gather_velocity_field(rank, comm, comm_cart, u_np_local, local_NX, local_NY, NX, NY)
 
             if rank == 0:
 
@@ -414,15 +360,38 @@ with mesh:
                 xlim = (0, NY)
                 ylim = (0, NX)
 
-                plt.figure(figsize=(7, 6))
-                plt.streamplot(X, Y, u_x.T, u_y.T, density=1.2, linewidth=1, arrowsize=1.5)
-                plt.xlim(xlim)
-                plt.ylim(ylim)
-                plt.title(f'Lid-driven cavity flow (Steps:{step:05d})')
-                plt.xlabel("X")
-                plt.ylabel("Y")
-                plt.axis("equal")
-                plt.grid(True)
+                # Plot
+                fig, ax = plt.subplots(figsize=(7, 6))
+
+                # Streamplot
+                ax.streamplot(X, Y, u_x.T, u_y.T, density=1.2, linewidth=1, arrowsize=1.5)
+
+                # Add ghost cell highlights (assuming 1-cell thick halo)
+                halo_thickness = 1
+
+                # Left
+                ax.add_patch(patches.Rectangle((0, 0), halo_thickness, NX, linewidth=2, edgecolor='red',
+                               facecolor='red', alpha=0.2, label='Ghost Cells'))
+                # Right
+                ax.add_patch(patches.Rectangle((NY - halo_thickness, 0), halo_thickness, NX, linewidth=2, edgecolor='red',
+                               facecolor='red', alpha=0.2))
+                # Bottom
+                ax.add_patch(patches.Rectangle((0, 0), NY, halo_thickness, linewidth=2, edgecolor='red',
+                               facecolor='red', alpha=0.2))
+                # Top
+                ax.add_patch(patches.Rectangle((0, NX - halo_thickness), NY, halo_thickness, linewidth=2, edgecolor=None,
+                               facecolor='red', alpha=0.2))
+
+                # Labels and aesthetics
+                ax.set_xlim(xlim)
+                ax.set_ylim(ylim)
+                ax.set_title(f'Lid-driven cavity flow (Steps:{step:05d})')
+                ax.set_xlabel("X")
+                ax.set_ylabel("Y")
+                ax.axis("equal")
+                ax.grid(True)
+                # fig.colorbar(im, ax=ax, label='Divergence')
+                ax.legend(loc='upper right')
                 plt.tight_layout()
                 plt.savefig(f'frames/streamplot_{step:05d}.png')
                 plt.close()
