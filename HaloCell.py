@@ -277,29 +277,29 @@ with mesh:
 
     print("Sharding info:", f.sharding)
 
-    def gather_velocity_field(rank, comm, comm_cart, u_np_local, local_NX, local_NY, NX, NY):
-    # Gather all local velocity fields to root
-        all_shards = comm.gather(u_np_local, root=0)
-        if rank != 0:
-            return None  # Only root reconstructs
+    # def gather_velocity_field(rank, comm, comm_cart, u_np_local, local_NX, local_NY, NX, NY):
+    # # Gather all local velocity fields to root
+    #     all_shards = comm.gather(u_np_local, root=0)
+    #     if rank != 0:
+    #         return None  # Only root reconstructs
 
     
-        u_combined = np.zeros((2, NX, NY), dtype=u_np_local.dtype)
+    #     u_combined = np.zeros((2, NX, NY), dtype=u_np_local.dtype)
 
-        for r, shard in enumerate(all_shards):
-            coords = comm_cart.Get_coords(r)
-            i_start = coords[0] * local_NX
-            j_start = coords[1] * local_NY
+    #     for r, shard in enumerate(all_shards):
+    #         coords = comm_cart.Get_coords(r)
+    #         i_start = coords[0] * local_NX
+    #         j_start = coords[1] * local_NY
 
-        # Sanity check on shape
-        while shard.ndim > 3:
-            shard = shard[0]
-        assert shard.shape == (2, local_NX, local_NY), f"Rank {r} shard shape mismatch: {shard.shape}"
+    #     # Sanity check on shape
+    #     while shard.ndim > 3:
+    #         shard = shard[0]
+    #     assert shard.shape == (2, local_NX, local_NY), f"Rank {r} shard shape mismatch: {shard.shape}"
 
-        # Place the shard in the full array
-        u_combined[:, i_start:i_start + local_NX, j_start:j_start + local_NY] = shard
+    #     # Place the shard in the full array
+    #     u_combined[:, i_start:i_start + local_NX, j_start:j_start + local_NY] = shard
     
-        return u_combined
+    #     return u_combined
 
 
     amp = []
@@ -322,20 +322,42 @@ with mesh:
         if step % 100 == 0:
             rho = jnp.einsum('ijk->jk', f[:, 1:-1, 1:-1])
             u = jnp.einsum('ai,ixy->axy', c, f[:, 1:-1, 1:-1]) / rho
-            # u_gathered = multihost_utils.process_allgather(u)
-            # u_np = np.array(u_gathered)
-            # all_shards = comm.gather(u_np, root=0)
+            u_gathered = multihost_utils.process_allgather(u)
+            u_np = np.array(u_gathered)
+            all_shards = comm.gather(u_np, root=0)
 
-            u_np_local = np.array(multihost_utils.process_allgather(u))
-            # Trim extra leading dimensions
-            while u_np_local.ndim > 3:
-                u_np_local = u_np_local[0]
-            assert u_np_local.shape == (2, local_NX, local_NY), f"Shape mismatch: {u_np_local.shape}"
-            print(f"[Rank {rank}] local u shape: {u.shape}, after allgather: {u_np_local.shape}", flush=True)
+            # u_np_local = np.array(multihost_utils.process_allgather(u))
+            # # Trim extra leading dimensions
+            # while u_np_local.ndim > 3:
+            #     u_np_local = u_np_local[0]
+            # assert u_np_local.shape == (2, local_NX, local_NY), f"Shape mismatch: {u_np_local.shape}"
+            # print(f"[Rank {rank}] local u shape: {u.shape}, after allgather: {u_np_local.shape}", flush=True)
 
-            u_combined = gather_velocity_field(rank, comm, comm_cart, u_np_local, local_NX, local_NY, NX, NY)
+            # u_combined = gather_velocity_field(rank, comm, comm_cart, u_np_local, local_NX, local_NY, NX, NY)
 
             if rank == 0:
+
+                try:
+                    
+                    # Normalize shard shapes
+                    normalized_shards = []
+                    for shard in all_shards:
+                        while shard.ndim > 3:
+                            shard = shard[0]  # strip excess batch dim
+                        assert shard.shape[0] == 2, f"Unexpected shard shape: {shard.shape}"
+                        normalized_shards.append(shard)
+
+                    # Concatenate along sharded axis (X)
+                    u_combined = np.concatenate(normalized_shards, axis=1)
+
+               
+                    print(f"Reconstructed shape: {u_combined.shape}")
+                    assert u_combined.shape == (2, NX, NY), \
+                        f"u_combined.shape = {u_combined.shape}, expected (2, {NX}, {NY})"
+
+                except Exception as e:
+                    print("Concatenation failed:", e)
+                    raise
 
                 u_x = u_combined[0]
                 u_y = u_combined[1]
