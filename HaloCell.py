@@ -143,11 +143,23 @@ def apply_bounce_back(f, is_left, is_right, is_bottom):
     f = jax.lax.cond(is_left, lambda f: bounce_from_left(f), lambda f: f, f)
     f = jax.lax.cond(is_right, lambda f: bounce_from_right(f), lambda f: f, f)
     f = jax.lax.cond(is_bottom, lambda f: bounce_from_bottom(f), lambda f: f, f)
-    # # Corners if needed
-    f = f.at[:, -2, 1].set(f[opposite, -2, 1])           # top-left corner
-    f = f.at[:, -2, -2].set(f[opposite, -2, -2])         # top-right corner
-    f = f.at[:, 1, 1].set(f[opposite, 1, 1])             # bottom-left corner
-    f = f.at[:, 1, -2].set(f[opposite, 1, -2])           # bottom-right corner            
+   # Corners bounce-back (only if these edges exist on this rank)
+    def corners_bc(f):
+        # Top-left corner (x=1, y=-2)
+        f = f.at[:, 1, -2].set(f[opposite, 1, -2])
+        # Top-right corner (x=-2, y=-2)
+        f = f.at[:, -2, -2].set(f[opposite, -2, -2])
+        # Bottom-left corner (x=1, y=1)
+        f = f.at[:, 1, 1].set(f[opposite, 1, 1])
+        # Bottom-right corner (x=-2, y=1)
+        f = f.at[:, -2, 1].set(f[opposite, -2, 1])
+        return f
+
+    # Only apply corners if at corresponding edges, to avoid out-of-bound errors
+    f = jax.lax.cond(is_left & is_top_edge, corners_bc, lambda f: f, f)
+    f = jax.lax.cond(is_right & is_top_edge, corners_bc, lambda f: f, f)
+    f = jax.lax.cond(is_left & is_bottom, corners_bc, lambda f: f, f)
+    f = jax.lax.cond(is_right & is_bottom, corners_bc, lambda f: f, f)          # bottom-right corner            
     return f
 
 def apply_top_lid_velocity(f, is_top, u_lid=jnp.array([-u_max, 0.0])):
