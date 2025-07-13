@@ -208,10 +208,15 @@ ndx, ndy = px, py  # process grid dims
 comm_cart = comm.Create_cart((ndx, ndy), periods=(False, False))
 coords = comm_cart.Get_coords(rank)
 
-left_src, left_dst = comm_cart.Shift(direction=0, disp=-1)
+# Move RIGHT (positive x): gives you right_src/dst
 right_src, right_dst = comm_cart.Shift(direction=0, disp=1)
-bottom_src, bottom_dst = comm_cart.Shift(direction=1, disp=-1)
+
+# Move LEFT (negative x): gives you left_src/dst
+left_src, left_dst = comm_cart.Shift(direction=0, disp=-1)
+
+# Similarly for Y-direction (vertical):
 top_src, top_dst = comm_cart.Shift(direction=1, disp=1)
+bottom_src, bottom_dst = comm_cart.Shift(direction=1, disp=-1)
 
 # left_src = rank - 1 if coords[0] > 0 else MPI.PROC_NULL
 # left_dst = rank - 1 if coords[0] > 0 else MPI.PROC_NULL
