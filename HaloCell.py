@@ -42,7 +42,7 @@ print(f"JAX backend: {jax.default_backend()}")
 
 # ✅ Simulation parameters
 NX, NY = 300, 300
-NSTEPS = 10000
+NSTEPS = 4000
 omega = 0.16
 u_max = 0.1
 nu = (1 / omega - 0.5) / 3
@@ -208,11 +208,14 @@ ndx, ndy = px, py  # process grid dims
 comm_cart = comm.Create_cart((ndx, ndy), periods=(False, False))
 coords = comm_cart.Get_coords(rank)
 
-left_src = rank - 1 if coords[0] > 0 else MPI.PROC_NULL
-left_dst = rank - 1 if coords[0] > 0 else MPI.PROC_NULL
+left_src, left_dst = comm_cart.Shift(direction=0, disp=-1)
+right_src, right_dst = comm_cart.Shift(direction=0, disp=1)
 
-right_src = rank + 1 if coords[0] < px - 1 else MPI.PROC_NULL
-right_dst = rank + 1 if coords[0] < px - 1 else MPI.PROC_NULL
+# left_src = rank - 1 if coords[0] > 0 else MPI.PROC_NULL
+# left_dst = rank - 1 if coords[0] > 0 else MPI.PROC_NULL
+
+# right_src = rank + 1 if coords[0] < px - 1 else MPI.PROC_NULL
+# right_dst = rank + 1 if coords[0] < px - 1 else MPI.PROC_NULL
 print(f"Rank {rank} neighbors: left_src={left_src}, right_src={right_src}")
 
 is_left_edge = coords[0] == 0
