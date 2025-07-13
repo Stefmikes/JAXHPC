@@ -244,20 +244,38 @@ def communicate(f_ikl):
 
     requests = []
 
-    # Send left inner boundary to left neighbor, receive left halo from left neighbor
+    # # Send left inner boundary to left neighbor, receive left halo from left neighbor
+    # if left_dst != MPI.PROC_NULL:
+    #     req_send_left = comm_cart.Isend(send_to_left, dest=left_dst)
+    #     req_recv_left = comm_cart.Irecv(recv_from_left, source=left_src)
+    #     requests.extend([req_send_left, req_recv_left])
+
+    # # Send right inner boundary to right neighbor, receive right halo from right neighbor
+    # if right_dst != MPI.PROC_NULL:
+    #     req_send_right = comm_cart.Isend(send_to_right, dest=right_dst)
+    #     req_recv_right = comm_cart.Irecv(recv_from_right, source=right_src)
+    #     requests.extend([req_send_right, req_recv_right])
+
     if left_dst != MPI.PROC_NULL:
         req_send_left = comm_cart.Isend(send_to_left, dest=left_dst)
-        req_recv_left = comm_cart.Irecv(recv_from_left, source=left_src)
-        requests.extend([req_send_left, req_recv_left])
+        requests.append(req_send_left)
 
-    # Send right inner boundary to right neighbor, receive right halo from right neighbor
+    if left_src != MPI.PROC_NULL:
+        req_recv_left = comm_cart.Irecv(recv_from_left, source=left_src)
+        requests.append(req_recv_left)
+
+        
     if right_dst != MPI.PROC_NULL:
         req_send_right = comm_cart.Isend(send_to_right, dest=right_dst)
+        requests.append(req_send_right)
+
+    if right_src != MPI.PROC_NULL:
         req_recv_right = comm_cart.Irecv(recv_from_right, source=right_src)
-        requests.extend([req_send_right, req_recv_right])
+        requests.append(req_recv_right)
 
+    print(f"[Rank {rank}] Before MPI.Waitall", flush=True)
     MPI.Request.Waitall(requests)
-
+    print(f"[Rank {rank}] After MPI.Waitall", flush=True)
     # Fill halos after communication
     if left_src != MPI.PROC_NULL:
         f_np[:, 0, :] = recv_from_left  # left halo at index 0
