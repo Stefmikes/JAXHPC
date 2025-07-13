@@ -231,24 +231,33 @@ is_bottom_edge = jnp.array(is_bottom_edge, dtype=bool)
 is_top_edge = jnp.array(is_top_edge, dtype=bool)
 
 def communicate(f_ikl):
-    f_np = np.array(f_ikl)  # Ensure correct type
+    f_np = np.array(f_ikl)  # Convert from JAX to NumPy
 
-    # print(f"[Rank {rank}] Starting communicate()", flush=True, file=sys.stderr)
+    # Create temporary contiguous buffers for receive
+    recv_left = np.empty_like(f_np[:, -1, :])
+    recv_right = np.empty_like(f_np[:, 0, :])
+    recv_bottom = np.empty_like(f_np[:, :, -1])
+    recv_top = np.empty_like(f_np[:, :, 0])
 
+    # X-direction communication (left and right)
     comm.Sendrecv(sendbuf=f_np[:, 1, :].copy(), dest=left_dst,
-                  recvbuf=f_np[:, -1, :], source=left_src)
-
-    # Send right (from index -2) and receive into left halo (index 0)
+                  recvbuf=recv_left, source=left_src)
     comm.Sendrecv(sendbuf=f_np[:, -2, :].copy(), dest=right_dst,
-                  recvbuf=f_np[:, 0, :], source=right_src)
-    
-    # Y-direction (vertical)
+                  recvbuf=recv_right, source=right_src)
+
+    # Y-direction communication (bottom and top)
     comm.Sendrecv(sendbuf=f_np[:, :, 1].copy(), dest=bottom_dst,
-                  recvbuf=f_np[:, :, -1], source=bottom_src)
-
+                  recvbuf=recv_bottom, source=bottom_src)
     comm.Sendrecv(sendbuf=f_np[:, :, -2].copy(), dest=top_dst,
-                  recvbuf=f_np[:, :, 0], source=top_src)
+                  recvbuf=recv_top, source=top_src)
 
+    # Set the halo regions with received data
+    f_np[:, -1, :] = recv_left
+    f_np[:, 0, :] = recv_right
+    f_np[:, :, -1] = recv_bottom
+    f_np[:, :, 0] = recv_top
+
+    return jnp.array(f_np)
 
     # LEFT-RIGHT communication
     # send_to_left = f_np[:, 1, :].copy()    # left inner boundary (index 1)
@@ -299,7 +308,7 @@ def communicate(f_ikl):
     #     f_np[:, -1, :] = recv_from_right  # right halo at index -1
 
 
-    return jnp.array(f_np)
+    # return jnp.array(f_np)
 
 local_devices = jax.local_devices()
 print(f"Process {jax.process_index()} local devices:", local_devices)
