@@ -41,7 +41,7 @@ print(f"JAX backend: {jax.default_backend()}")
 
 # ✅ Simulation parameters
 NX, NY = 300, 300
-NSTEPS = 2000
+NSTEPS = 15000
 omega = 0.16
 u_max = 0.1
 nu = (1 / omega - 0.5) / 3
@@ -350,7 +350,7 @@ with mesh:
         f_cpu = f.addressable_data(0)  # Get CPU array for MPI communication            
                 
         if size> 1:
-            print(f"[Rank {rank}] Step {step} communicating halos...", flush=True, file=sys.stderr)
+            # print(f"[Rank {rank}] Step {step} communicating halos...", flush=True, file=sys.stderr)
             f_cpu = communicate(f_cpu)
 
         f = jax.device_put(f_cpu, f.sharding)  
