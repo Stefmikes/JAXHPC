@@ -131,12 +131,18 @@ def stream(f):
 
 opposite = jnp.array([0, 3, 4, 1, 2, 7, 8, 5, 6])
 
-def apply_bounce_back(f):
-    # Only interior boundary (exclude halos)
-    f = f.at[:, 1:-1, 1].set(f[opposite, 1:-1, 1])       # left edge
-    f = f.at[:, 1:-1, -2].set(f[opposite, 1:-1, -2])     # right edge
-    f = f.at[:, 1, 1:-1].set(f[opposite, 1, 1:-1])       # bottom edge
+def bounce_from_left(f):
+    return f.at[:, 1:-1, 1].set(f[opposite, 1:-1, 1])
+def bounce_from_right(f):
+    return f.at[:, 1:-1, -2].set(f[opposite, 1:-1, -2])
 
+def bounce_from_bottom(f):
+    return f.at[:, 1, 1:-1].set(f[opposite, 1, 1:-1])
+
+def apply_bounce_back(f, is_left, is_right, is_bottom):
+    f = jax.lax.cond(is_left, lambda f: bounce_from_left(f), lambda f: f, f)
+    f = jax.lax.cond(is_right, lambda f: bounce_from_right(f), lambda f: f, f)
+    f = jax.lax.cond(is_bottom, lambda f: bounce_from_bottom(f), lambda f: f, f)
     # # Corners if needed
     f = f.at[:, -2, 1].set(f[opposite, -2, 1])           # top-left corner
     f = f.at[:, -2, -2].set(f[opposite, -2, -2])         # top-right corner
@@ -144,17 +150,27 @@ def apply_bounce_back(f):
     f = f.at[:, 1, -2].set(f[opposite, 1, -2])           # bottom-right corner            
     return f
 
-def apply_top_lid_velocity(f, u_lid=jnp.array([-u_max, 0.0])):
-    rho_wall = (f[0, 1:-1, -2] + f[1, 1:-1, -2] + f[3, 1:-1, -2] +
-                2 * (f[4, 1:-1, -2] + f[7, 1:-1, -2] + f[8, 1:-1, -2]))
-    incoming = [2, 5, 6]
-    for i in incoming:
-        i_opp = opposite[i]
-        ci_dot_u = c[0, i] * u_lid[0] + c[1, i] * u_lid[1]
-        correction = 6.0 * w[i] * rho_wall * ci_dot_u
-        f = f.at[i, 1:-1, -2].set(f[i_opp, 1:-1, -2] - correction)
-        f = jnp.maximum(f, 0.0)
-    return f
+def apply_top_lid_velocity(f, is_top, u_lid=jnp.array([-u_max, 0.0])):
+    def do_lid_velocity(f):
+        rho_wall = (f[0, 1:-1, -2] + f[1, 1:-1, -2] + f[3, 1:-1, -2] +
+                    2 * (f[4, 1:-1, -2] + f[7, 1:-1, -2] + f[8, 1:-1, -2]))
+
+        incoming = jnp.array([2, 5, 6])
+
+        def body(i, f):
+            i_ = incoming[i]
+            i_opp = opposite[i_]
+            ci_dot_u = c[0, i_] * u_lid[0] + c[1, i_] * u_lid[1]
+            correction = 6.0 * w[i_] * rho_wall * ci_dot_u
+            f = f.at[i_, 1:-1, -2].set(f[i_opp, 1:-1, -2] - correction)
+            f = jnp.maximum(f, 0.0)
+            return f
+
+        f = jax.lax.fori_loop(0, len(incoming), body, f)
+        return f
+
+    return jax.lax.cond(is_top, do_lid_velocity, lambda f: f, f)
+
 
 ix = jax.process_index()
 iy = 0
@@ -180,7 +196,7 @@ u0 = jnp.zeros((local_NX, local_NY), dtype)
 
 rho0 = jnp.ones((local_NX, local_NY), dtype=dtype)
 v0 = jnp.zeros_like(u0)
-u_init = jnp.array([u0, v0])
+u_init = jnp.array([u0, v0]) 
 f0 = equilibrium(rho0, u_init).astype(dtype)
 # Start with interior equilibrium distribution
 f0_inner = equilibrium(rho0, u_init).astype(dtype)
@@ -210,6 +226,16 @@ left_dst = rank - 1 if coords[0] > 0 else MPI.PROC_NULL
 right_src = rank + 1 if coords[0] < px - 1 else MPI.PROC_NULL
 right_dst = rank + 1 if coords[0] < px - 1 else MPI.PROC_NULL
 print(f"Rank {rank} neighbors: left_src={left_src}, right_src={right_src}")
+
+is_left_edge = coords[0] == 0
+is_right_edge = coords[0] == px - 1
+is_bottom_edge = coords[1] == 0
+is_top_edge = coords[1] == py - 1  # Currently py = 1, so always True
+
+is_left_edge = jnp.array(is_left_edge, dtype=bool)
+is_right_edge = jnp.array(is_right_edge, dtype=bool)
+is_bottom_edge = jnp.array(is_bottom_edge, dtype=bool)
+is_top_edge = jnp.array(is_top_edge, dtype=bool)
 
 def communicate(f_ikl):
     f_np = np.array(f_ikl)  # Ensure correct type
@@ -250,7 +276,7 @@ print(f"Process {jax.process_index()} local devices:", local_devices)
 local_mesh_shape = (len(local_devices),)  # 1D mesh for simplicity
 local_device_mesh = mesh_utils.create_device_mesh(local_mesh_shape, devices=local_devices)
 
-mesh = Mesh(local_device_mesh, axis_names=('x'))  # Use axis_names matching mesh dims
+mesh = Mesh(local_device_mesh, axis_names=('x',))  # Use axis_names matching mesh dims
 
 #  Device mesh setup (same as before)
 # mesh = Mesh(mesh_utils.create_device_mesh((px, py)), axis_names=('x', 'y'))
@@ -262,16 +288,16 @@ with mesh:
 
     f = jax.device_put(f0, sharding)
 
-    def lbm_collide_stream(f):
+    def lbm_collide_stream(f, is_left, is_right, is_bottom, is_top):
         f, _ = collide(f)
         f = stream(f)
-        f = apply_bounce_back(f)
-        f = apply_top_lid_velocity(f)
+        f = apply_bounce_back(f, is_left, is_right, is_bottom)
+        f = apply_top_lid_velocity(f, is_top)
         return f
 
     lbm_collide_stream = pjit(
         lbm_collide_stream,
-        in_shardings=P(None, 'x'),
+        in_shardings=(P(None, 'x'), P(), P(), P(), P()),
         out_shardings=P(None, 'x'),
     )
 
@@ -317,8 +343,8 @@ with mesh:
 
         f = jax.device_put(f_cpu, f.sharding)  
 
-        f = lbm_collide_stream(f)      
-
+        f = lbm_collide_stream(f, is_left_edge, is_right_edge, is_bottom_edge, is_top_edge)
+      
         if step % 100 == 0:
             rho = jnp.einsum('ijk->jk', f[:, 1:-1, 1:-1])
             u = jnp.einsum('ai,ixy->axy', c, f[:, 1:-1, 1:-1]) / rho
