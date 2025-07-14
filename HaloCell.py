@@ -128,7 +128,7 @@ def corner_bottom_right(f):
 
 def apply_bounce_back(f, is_left, is_right, is_bottom):
     f = jax.lax.cond(is_left, lambda f: bounce_from_left(f), lambda f: f, f)
-    f = jax.lax.cond(is_right, lambda f: bounce_from_right(f), lambda f: f, f)
+    # f = jax.lax.cond(is_right, lambda f: bounce_from_right(f), lambda f: f, f)
     f = jax.lax.cond(is_bottom, lambda f: bounce_from_bottom(f), lambda f: f, f)
    
     # Only apply corners if at corresponding edges, to avoid out-of-bound errors
@@ -282,7 +282,7 @@ with mesh:
     def lbm_collide_stream(f, is_left, is_right, is_bottom, is_top):
         f, _ = collide(f)
         f = stream(f)
-        # f = apply_bounce_back(f, is_left, is_right, is_bottom)
+        f = apply_bounce_back(f, is_left, is_right, is_bottom)
         f = apply_top_lid_velocity(f, is_top)
         return f
 
