@@ -249,7 +249,7 @@ def communicate(f_ikl):
     #     # print(f"Process {rank} commun
     comm_cart.Sendrecv(sendbuf=f_np[:, 1, :].copy(), dest=left_dst,
                       recvbuf=recv_left, source=left_src)
-    f_np[:, -1, :] = recv_left
+    f_np[:, 0, :] = recv_left
     # else:
     #     # Edge process — apply boundary condition (e.g., zero-gradient)
     #     f_np[:, -1, :] = f_np[:, -2, :]
@@ -257,7 +257,7 @@ def communicate(f_ikl):
     # if right_src != MPI.PROC_NULL:
     comm_cart.Sendrecv(sendbuf=f_np[:, -2, :].copy(), dest=right_dst,
                       recvbuf=recv_right, source=right_src)
-    f_np[:, 0, :] = recv_right
+    f_np[:, -1, :] = recv_right
     # else:
     #     f_np[:, 0, :] = f_np[:, 1, :]
 
