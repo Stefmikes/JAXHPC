@@ -41,8 +41,8 @@ print(f"Process {jax.process_index()} on {socket.gethostname()} using {jax.local
 print(f"JAX backend: {jax.default_backend()}")
 
 # ✅ Simulation parameters
-NX, NY = 300, 300
-NSTEPS = 2500
+NX, NY = 60, 60
+NSTEPS = 2000
 omega = 0.16
 u_max = 0.1
 nu = (1 / omega - 0.5) / 3
@@ -210,18 +210,15 @@ coords = comm_cart.Get_coords(rank)
 
 left_src, left_dst = comm_cart.Shift(direction=0, disp=-1)
 right_src, right_dst = comm_cart.Shift(direction=0, disp=1)
+bottom_src, bottom_dst = comm_cart.Shift(direction=1, disp=-1)
+top_src, top_dst = comm_cart.Shift(direction=1, disp=1)
 
-# left_src = rank - 1 if coords[0] > 0 else MPI.PROC_NULL
-# left_dst = rank - 1 if coords[0] > 0 else MPI.PROC_NULL
-
-# right_src = rank + 1 if coords[0] < px - 1 else MPI.PROC_NULL
-# right_dst = rank + 1 if coords[0] < px - 1 else MPI.PROC_NULL
 print(f"Rank {rank} neighbors: left_src={left_src}, right_src={right_src}")
 
 is_left_edge = coords[0] == 0
 is_right_edge = coords[0] == px - 1
 is_bottom_edge = coords[1] == 0
-is_top_edge = True #coords[1] == py - 1  # Currently py = 1, so always True
+is_top_edge = coords[1] == py - 1
 
 is_left_edge = jnp.array(is_left_edge, dtype=bool)
 is_right_edge = jnp.array(is_right_edge, dtype=bool)
@@ -244,18 +241,6 @@ def communicate(f_ikl):
 
     requests = []
 
-    # # Send left inner boundary to left neighbor, receive left halo from left neighbor
-    # if left_dst != MPI.PROC_NULL:
-    #     req_send_left = comm_cart.Isend(send_to_left, dest=left_dst)
-    #     req_recv_left = comm_cart.Irecv(recv_from_left, source=left_src)
-    #     requests.extend([req_send_left, req_recv_left])
-
-    # # Send right inner boundary to right neighbor, receive right halo from right neighbor
-    # if right_dst != MPI.PROC_NULL:
-    #     req_send_right = comm_cart.Isend(send_to_right, dest=right_dst)
-    #     req_recv_right = comm_cart.Irecv(recv_from_right, source=right_src)
-    #     requests.extend([req_send_right, req_recv_right])
-
     if left_dst != MPI.PROC_NULL:
         req_send_left = comm_cart.Isend(send_to_left, dest=left_dst)
         requests.append(req_send_left)
@@ -264,7 +249,6 @@ def communicate(f_ikl):
         req_recv_left = comm_cart.Irecv(recv_from_left, source=left_src)
         requests.append(req_recv_left)
 
-        
     if right_dst != MPI.PROC_NULL:
         req_send_right = comm_cart.Isend(send_to_right, dest=right_dst)
         requests.append(req_send_right)
@@ -328,17 +312,21 @@ with mesh:
     for step in range(NSTEPS):
         f_cpu = f.addressable_data(0)  # Get CPU array for MPI communication            
                 
-        # if size> 1:
-        #     # print(f"[Rank {rank}] Step {step} communicating halos...", flush=True, file=sys.stderr)
-        #     f_cpu = communicate(f_cpu)
-        #     if not is_left_edge:
-        #         diff_left = jnp.abs(f[:,1,:] - f[:,0,:])  # inner vs received halo
-        #         print(f"[Rank {rank}] Max left halo mismatch: {diff_left.max()}")
+        if size> 1:
+            # print(f"[Rank {rank}] Step {step} communicating halos...", flush=True, file=sys.stderr)
+            f_cpu = communicate(f_cpu)
+            if not is_left_edge:
+                print(f"[Rank {rank}] Sent to left: {f[:,1,:]}")
+                print(f"[Rank {rank}] Received left halo: {f[:,0,:]}")
+                diff_left = jnp.abs(f[:,1,:] - f[:,0,:])  # inner vs received halo
+                print(f"[Rank {rank}] Max left halo mismatch: {diff_left.max()}")
 
-        #     # For right boundary
-        #     if not is_right_edge:
-        #         diff_right = jnp.abs(f[:,-2,:] - f[:,-1,:])  # inner vs received halo
-        #         print(f"[Rank {rank}] Max right halo mismatch: {diff_right.max()}")
+            # For right boundary
+            if not is_right_edge:
+                print(f"[Rank {rank}] Sent to right: {f[:,-2,:]}")
+                print(f"[Rank {rank}] Received right halo: {f[:,-1,:]}")
+                diff_right = jnp.abs(f[:,-2,:] - f[:,-1,:])  # inner vs received halo
+                print(f"[Rank {rank}] Max right halo mismatch: {diff_right.max()}")
 
         f = jax.device_put(f_cpu, f.sharding)  
 
