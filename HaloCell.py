@@ -328,17 +328,17 @@ with mesh:
     for step in range(NSTEPS):
         f_cpu = f.addressable_data(0)  # Get CPU array for MPI communication            
                 
-        if size> 1:
-            # print(f"[Rank {rank}] Step {step} communicating halos...", flush=True, file=sys.stderr)
-            f_cpu = communicate(f_cpu)
-            if not is_left_edge:
-                diff_left = jnp.abs(f[:,1,:] - f[:,0,:])  # inner vs received halo
-                print(f"[Rank {rank}] Max left halo mismatch: {diff_left.max()}")
+        # if size> 1:
+        #     # print(f"[Rank {rank}] Step {step} communicating halos...", flush=True, file=sys.stderr)
+        #     f_cpu = communicate(f_cpu)
+        #     if not is_left_edge:
+        #         diff_left = jnp.abs(f[:,1,:] - f[:,0,:])  # inner vs received halo
+        #         print(f"[Rank {rank}] Max left halo mismatch: {diff_left.max()}")
 
-            # For right boundary
-            if not is_right_edge:
-                diff_right = jnp.abs(f[:,-2,:] - f[:,-1,:])  # inner vs received halo
-                print(f"[Rank {rank}] Max right halo mismatch: {diff_right.max()}")
+        #     # For right boundary
+        #     if not is_right_edge:
+        #         diff_right = jnp.abs(f[:,-2,:] - f[:,-1,:])  # inner vs received halo
+        #         print(f"[Rank {rank}] Max right halo mismatch: {diff_right.max()}")
 
         f = jax.device_put(f_cpu, f.sharding)  
 
