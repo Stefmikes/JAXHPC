@@ -42,7 +42,7 @@ print(f"JAX backend: {jax.default_backend()}")
 
 # ✅ Simulation parameters
 NX, NY = 300, 300
-NSTEPS = 3000
+NSTEPS = 2000
 omega = 0.16
 u_max = 0.1
 nu = (1 / omega - 0.5) / 3
