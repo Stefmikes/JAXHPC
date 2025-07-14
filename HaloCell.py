@@ -42,7 +42,7 @@ print(f"JAX backend: {jax.default_backend()}")
 
 # ✅ Simulation parameters
 NX, NY = 300, 300
-NSTEPS = 2000
+NSTEPS = 2500
 omega = 0.16
 u_max = 0.1
 nu = (1 / omega - 0.5) / 3
@@ -208,15 +208,10 @@ ndx, ndy = px, py  # process grid dims
 comm_cart = comm.Create_cart((ndx, ndy), periods=(False, False))
 coords = comm_cart.Get_coords(rank)
 
-# Move RIGHT (positive x): gives you right_src/dst
-right_src, right_dst = comm_cart.Shift(direction=0, disp=1)
-
-# Move LEFT (negative x): gives you left_src/dst
 left_src, left_dst = comm_cart.Shift(direction=0, disp=-1)
-
-# Similarly for Y-direction (vertical):
-top_src, top_dst = comm_cart.Shift(direction=1, disp=1)
+right_src, right_dst = comm_cart.Shift(direction=0, disp=1)
 bottom_src, bottom_dst = comm_cart.Shift(direction=1, disp=-1)
+top_src, top_dst = comm_cart.Shift(direction=1, disp=1)
 
 # left_src = rank - 1 if coords[0] > 0 else MPI.PROC_NULL
 # left_dst = rank - 1 if coords[0] > 0 else MPI.PROC_NULL
@@ -236,47 +231,33 @@ is_bottom_edge = jnp.array(is_bottom_edge, dtype=bool)
 is_top_edge = jnp.array(is_top_edge, dtype=bool)
 
 def communicate(f_ikl):
-    f_np = np.array(f_ikl)
+    f_np = np.array(f_ikl)  # Convert from JAX to NumPy
 
-    print(f"Process {rank} communicating with neighbors:")
-
+    # Create temporary contiguous buffers for receive
     recv_left = np.empty_like(f_np[:, -1, :])
     recv_right = np.empty_like(f_np[:, 0, :])
     recv_bottom = np.empty_like(f_np[:, :, -1])
     recv_top = np.empty_like(f_np[:, :, 0])
 
-    if left_src != MPI.PROC_NULL:
-        print(f"Process {rank} communicating with neighbors:")
-        comm_cart.Sendrecv(sendbuf=f_np[:, 1, :].copy(), dest=left_dst,
-                      recvbuf=recv_left, source=left_src)
-        f_np[:, -1, :] = recv_left
-    else:
-        # Edge process — apply boundary condition (e.g., zero-gradient)
-        f_np[:, -1, :] = f_np[:, -2, :]
+    # X-direction communication (left and right)
+    comm.Sendrecv(sendbuf=f_np[:, 1, :].copy(), dest=left_dst,
+                  recvbuf=recv_left, source=left_src)
+    comm.Sendrecv(sendbuf=f_np[:, -2, :].copy(), dest=right_dst,
+                  recvbuf=recv_right, source=right_src)
 
-    if right_src != MPI.PROC_NULL:
-        comm_cart.Sendrecv(sendbuf=f_np[:, -2, :].copy(), dest=right_dst,
-                      recvbuf=recv_right, source=right_src)
-        f_np[:, 0, :] = recv_right
-    else:
-        f_np[:, 0, :] = f_np[:, 1, :]
+    # Y-direction communication (bottom and top)
+    comm.Sendrecv(sendbuf=f_np[:, :, 1].copy(), dest=bottom_dst,
+                  recvbuf=recv_bottom, source=bottom_src)
+    comm.Sendrecv(sendbuf=f_np[:, :, -2].copy(), dest=top_dst,
+                  recvbuf=recv_top, source=top_src)
 
-    if bottom_src != MPI.PROC_NULL:
-        comm_cart.Sendrecv(sendbuf=f_np[:, :, 1].copy(), dest=bottom_dst,
-                      recvbuf=recv_bottom, source=bottom_src)
-        f_np[:, :, -1] = recv_bottom
-    else:
-        f_np[:, :, -1] = f_np[:, :, -2]
-
-    if top_src != MPI.PROC_NULL:
-        comm_cart.Sendrecv(sendbuf=f_np[:, :, -2].copy(), dest=top_dst,
-                      recvbuf=recv_top, source=top_src)
-        f_np[:, :, 0] = recv_top
-    else:
-        f_np[:, :, 0] = f_np[:, :, 1]
+    # Set the halo regions with received data
+    f_np[:, -1, :] = recv_left
+    f_np[:, 0, :] = recv_right
+    f_np[:, :, -1] = recv_bottom
+    f_np[:, :, 0] = recv_top
 
     return jnp.array(f_np)
-
 
     # LEFT-RIGHT communication
     # send_to_left = f_np[:, 1, :].copy()    # left inner boundary (index 1)
@@ -371,17 +352,17 @@ with mesh:
     for step in range(NSTEPS):
         f_cpu = f.addressable_data(0)  # Get CPU array for MPI communication            
                 
-        # if size> 1:
-        #     # print(f"[Rank {rank}] Step {step} communicating halos...", flush=True, file=sys.stderr)
-        #     f_cpu = communicate(f_cpu)
-        #     if not is_left_edge:
-        #         diff_left = jnp.abs(f[:,1,:] - f[:,0,:])  # inner vs received halo
-        #         print(f"[Rank {rank}] Max left halo mismatch: {diff_left.max()}")
+        if size> 1:
+            # print(f"[Rank {rank}] Step {step} communicating halos...", flush=True, file=sys.stderr)
+            f_cpu = communicate(f_cpu)
+            if not is_left_edge:
+                diff_left = jnp.abs(f[:,1,:] - f[:,0,:])  # inner vs received halo
+                print(f"[Rank {rank}] Max left halo mismatch: {diff_left.max()}")
 
-        #     # For right boundary
-        #     if not is_right_edge:
-        #         diff_right = jnp.abs(f[:,-2,:] - f[:,-1,:])  # inner vs received halo
-        #         print(f"[Rank {rank}] Max right halo mismatch: {diff_right.max()}")
+            # For right boundary
+            if not is_right_edge:
+                diff_right = jnp.abs(f[:,-2,:] - f[:,-1,:])  # inner vs received halo
+                print(f"[Rank {rank}] Max right halo mismatch: {diff_right.max()}")
 
         f = jax.device_put(f_cpu, f.sharding)  
 
