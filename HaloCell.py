@@ -223,7 +223,7 @@ is_top_edge = jnp.array(is_top_edge, dtype=bool)
 
 
 def communicate(f_ikl, comm_cart, left_src, left_dst, right_src, right_dst,
-                bottom_src, bottom_dst, top_src, top_dst):
+                bottom_src, bottom_dst, top_src, top_dst,py):
     # print(f"[Rank {rank}] Starting communicate()", flush=True, file=sys.stderr)
     f_np = np.array(f_ikl)  # Ensure mutable array for MPI
 
