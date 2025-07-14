@@ -245,34 +245,35 @@ def communicate(f_ikl):
     recv_bottom = np.empty_like(f_np[:, :, -1])
     recv_top = np.empty_like(f_np[:, :, 0])
 
-    if left_src != MPI.PROC_NULL:
-        comm_cart.Sendrecv(sendbuf=f_np[:, 1, :].copy(), dest=left_dst,
+    # if left_src != MPI.PROC_NULL:
+    #     # print(f"Process {rank} commun
+    comm_cart.Sendrecv(sendbuf=f_np[:, 1, :].copy(), dest=left_dst,
                       recvbuf=recv_left, source=left_src)
-        f_np[:, -1, :] = recv_left
-    else:
-        # Edge process — apply boundary condition (e.g., zero-gradient)
-        f_np[:, -1, :] = f_np[:, -2, :]
+    f_np[:, -1, :] = recv_left
+    # else:
+    #     # Edge process — apply boundary condition (e.g., zero-gradient)
+    #     f_np[:, -1, :] = f_np[:, -2, :]
 
-    if right_src != MPI.PROC_NULL:
-        comm_cart.Sendrecv(sendbuf=f_np[:, -2, :].copy(), dest=right_dst,
+    # if right_src != MPI.PROC_NULL:
+    comm_cart.Sendrecv(sendbuf=f_np[:, -2, :].copy(), dest=right_dst,
                       recvbuf=recv_right, source=right_src)
-        f_np[:, 0, :] = recv_right
-    else:
-        f_np[:, 0, :] = f_np[:, 1, :]
+    f_np[:, 0, :] = recv_right
+    # else:
+    #     f_np[:, 0, :] = f_np[:, 1, :]
 
-    if bottom_src != MPI.PROC_NULL:
-        comm_cart.Sendrecv(sendbuf=f_np[:, :, 1].copy(), dest=bottom_dst,
+    # if bottom_src != MPI.PROC_NULL:
+    comm_cart.Sendrecv(sendbuf=f_np[:, :, 1].copy(), dest=bottom_dst,
                       recvbuf=recv_bottom, source=bottom_src)
-        f_np[:, :, -1] = recv_bottom
-    else:
-        f_np[:, :, -1] = f_np[:, :, -2]
+    f_np[:, :, -1] = recv_bottom
+    # else:
+    #     f_np[:, :, -1] = f_np[:, :, -2]
 
-    if top_src != MPI.PROC_NULL:
-        comm_cart.Sendrecv(sendbuf=f_np[:, :, -2].copy(), dest=top_dst,
+    # if top_src != MPI.PROC_NULL:
+    comm_cart.Sendrecv(sendbuf=f_np[:, :, -2].copy(), dest=top_dst,
                       recvbuf=recv_top, source=top_src)
-        f_np[:, :, 0] = recv_top
-    else:
-        f_np[:, :, 0] = f_np[:, :, 1]
+    f_np[:, :, 0] = recv_top
+    # else:
+    #     f_np[:, :, 0] = f_np[:, :, 1]
 
     return jnp.array(f_np)
 
