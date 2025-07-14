@@ -41,9 +41,9 @@ print(f"Process {jax.process_index()} on {socket.gethostname()} using {jax.local
 print(f"JAX backend: {jax.default_backend()}")
 
 # ✅ Simulation parameters
-NX, NY = 15000, 10000
-NSTEPS = 10000
-omega = 1.3
+NX, NY = 300, 300
+NSTEPS = 5000
+omega = 1.7
 u_max = 0.1
 nu = (1 / omega - 0.5) / 3
 
@@ -219,6 +219,7 @@ bottom_src, bottom_dst = comm_cart.Shift(direction=1, disp=-1)
 top_src, top_dst = comm_cart.Shift(direction=1, disp=1)
 
 print(f"Rank {rank} neighbors: left_src={left_src}, right_src={right_src}")
+print(f"Rank {rank} neighbors: bottom_src={bottom_src}, top_src={top_src}")
 
 is_left_edge = coords[0] == 0
 is_right_edge = coords[0] == px - 1
@@ -331,76 +332,89 @@ with mesh:
                 # print(f"[Rank {rank}] Received right halo: {f_cpu[:,-1,:]}")
                 diff_right = jnp.abs(f_cpu[:,-2,:] - f_cpu[:,-1,:])  # inner vs received halo
                 print(f"[STEP:{step}] [Rank {rank}] Max right halo mismatch: {diff_right.max()}")
+            # For top boundary
+            if not is_top_edge:
+                # print(f"[Rank {rank}] Sent to top: {f_cpu[1,:,:]}")
+                # print(f"[Rank {rank}] Received top halo: {f_cpu[0,:,:]}")
+                diff_top = jnp.abs(f_cpu[1,:,:] - f_cpu[0,:,:])  # inner vs received halo
+                print(f"[STEP:{step}] [Rank {rank}] Max top halo mismatch: {diff_top.max()}")
+            # For bottom boundary
+            if not is_bottom_edge:
+                # print(f"[Rank {rank}] Sent to bottom: {f_cpu[-2,:,:]}")
+                # print(f"[Rank {rank}] Received bottom halo: {f_cpu[-1,:,:]}")
+                diff_bottom = jnp.abs(f_cpu[-2,:,:] - f_cpu[-1,:,:])  # inner vs received halo
+                print(f"[STEP:{step}] [Rank {rank}] Max bottom halo mismatch: {diff_bottom.max()}")
+
         comm_cart.barrier() 
         f = jax.device_put(f_cpu, f.sharding)  
 
         f = lbm_collide_stream(f, is_left_edge, is_right_edge, is_bottom_edge, is_top_edge)
       
-        # if step % 100 == 0:
-        #     rho = jnp.einsum('ijk->jk', f[:, 1:-1, 1:-1])
-        #     u = jnp.einsum('ai,ixy->axy', c, f[:, 1:-1, 1:-1]) / rho
-        #     u_gathered = multihost_utils.process_allgather(u)
-        #     u_np = np.array(u_gathered)
-        #     all_shards = comm.gather(u_np, root=0)
+        if step % 100 == 0:
+            rho = jnp.einsum('ijk->jk', f[:, 1:-1, 1:-1])
+            u = jnp.einsum('ai,ixy->axy', c, f[:, 1:-1, 1:-1]) / rho
+            u_gathered = multihost_utils.process_allgather(u)
+            u_np = np.array(u_gathered)
+            all_shards = comm.gather(u_np, root=0)
 
-        #     if rank == 0:
+            if rank == 0:
 
-        #         try:
+                try:
                     
-        #             # Normalize shard shapes
-        #             normalized_shards = []
-        #             for shard in all_shards:
-        #                 while shard.ndim > 3:
-        #                     shard = shard[0]  # strip excess batch dim
-        #                 assert shard.shape[0] == 2, f"Unexpected shard shape: {shard.shape}"
-        #                 normalized_shards.append(shard)
+                    # Normalize shard shapes
+                    normalized_shards = []
+                    for shard in all_shards:
+                        while shard.ndim > 3:
+                            shard = shard[0]  # strip excess batch dim
+                        assert shard.shape[0] == 2, f"Unexpected shard shape: {shard.shape}"
+                        normalized_shards.append(shard)
 
-        #             # Concatenate along sharded axis (X)
-        #             u_combined = np.concatenate(normalized_shards, axis=1)
+                    # Concatenate along sharded axis (X)
+                    u_combined = np.concatenate(normalized_shards, axis=1)
 
                
-        #             print(f"Reconstructed shape: {u_combined.shape}")
-        #             assert u_combined.shape == (2, NX, NY), \
-        #                 f"u_combined.shape = {u_combined.shape}, expected (2, {NX}, {NY})"
+                    print(f"Reconstructed shape: {u_combined.shape}")
+                    assert u_combined.shape == (2, NX, NY), \
+                        f"u_combined.shape = {u_combined.shape}, expected (2, {NX}, {NY})"
 
-        #         except Exception as e:
-        #             print("Concatenation failed:", e)
-        #             raise
+                except Exception as e:
+                    print("Concatenation failed:", e)
+                    raise
 
-        #         u_x = u_combined[0]
-        #         u_y = u_combined[1]
+                u_x = u_combined[0]
+                u_y = u_combined[1]
 
-        #         speed = np.sqrt(u_x**2 + u_y**2)
-        #         print(f"Step {step}: top lid max u_x = {u_x[:, -1].max():.4f}")
+                speed = np.sqrt(u_x**2 + u_y**2)
+                print(f"Step {step}: top lid max u_x = {u_x[:, -1].max():.4f}")
 
-        #         ix = min(NX // 2, u_x.shape[0] - 1)
-        #         iy = min(NY // 8, u_x.shape[1] - 1)
-        #         amp.append(u_x[ix, iy])
+                ix = min(NX // 2, u_x.shape[0] - 1)
+                iy = min(NY // 8, u_x.shape[1] - 1)
+                amp.append(u_x[ix, iy])
 
-        #         profiles.append(u_x[NX // 2, :].copy())  # now safe!
+                profiles.append(u_x[NX // 2, :].copy())  # now safe!
 
-        #         # Meshgrid with correct dimensions for streamplot
-        #         X, Y = np.meshgrid(np.arange(NY), np.arange(NX))
-        #         xlim = (0, NY)
-        #         ylim = (0, NX)
+                # Meshgrid with correct dimensions for streamplot
+                X, Y = np.meshgrid(np.arange(NY), np.arange(NX))
+                xlim = (0, NY)
+                ylim = (0, NX)
                 
-        #         # Plot
-        #         fig, ax = plt.subplots(figsize=(7, 6))
+                # Plot
+                fig, ax = plt.subplots(figsize=(7, 6))
 
-        #         # Streamplot
-        #         ax.streamplot(X, Y, u_x.T, u_y.T, density=1.2, linewidth=1, arrowsize=1.5)
+                # Streamplot
+                ax.streamplot(X, Y, u_x.T, u_y.T, density=1.2, linewidth=1, arrowsize=1.5)
 
-        #         # Labels and aesthetics
-        #         ax.set_xlim(xlim)
-        #         ax.set_ylim(ylim)
-        #         ax.set_title(f'Lid-driven cavity flow (Steps:{step:05d})')
-        #         ax.set_xlabel("X")
-        #         ax.set_ylabel("Y")
-        #         ax.axis("equal")
-        #         ax.grid(True)
-        #         plt.tight_layout()
-        #         plt.savefig(f'frames/streamplot_{step:05d}.png')
-        #         plt.close()
+                # Labels and aesthetics
+                ax.set_xlim(xlim)
+                ax.set_ylim(ylim)
+                ax.set_title(f'Lid-driven cavity flow (Steps:{step:05d})')
+                ax.set_xlabel("X")
+                ax.set_ylabel("Y")
+                ax.axis("equal")
+                ax.grid(True)
+                plt.tight_layout()
+                plt.savefig(f'frames/streamplot_{step:05d}.png')
+                plt.close()
 
     end = time.time()
 
@@ -414,12 +428,12 @@ print(f"BLUPS: {blups:.3f}")
 print(f"Domain: {NX}x{NY}, Steps: {NSTEPS}")
 print(f"Viscosity: {nu:.4e}")
 
-# if rank == 0:
-#     import imageio
-#     for prefix in ['streamplot']:
-#         with imageio.get_writer(f'{prefix}.gif', mode='I', duration=0.5) as writer:
-#             for step in range(0, NSTEPS,100):
-#                 filename = f'frames/{prefix}_{step:05d}.png'
-#                 if os.path.exists(filename):
-#                     image = imageio.imread(filename)
-#                     writer.append_data(image)
+if rank == 0:
+    import imageio
+    for prefix in ['streamplot']:
+        with imageio.get_writer(f'{prefix}.gif', mode='I', duration=0.5) as writer:
+            for step in range(0, NSTEPS,100):
+                filename = f'frames/{prefix}_{step:05d}.png'
+                if os.path.exists(filename):
+                    image = imageio.imread(filename)
+                    writer.append_data(image)
