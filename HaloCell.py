@@ -42,8 +42,8 @@ print(f"JAX backend: {jax.default_backend()}")
 
 # ✅ Simulation parameters
 NX, NY = 300, 300
-NSTEPS = 5000
-omega = 0.16
+NSTEPS = 10000
+omega = 1.6
 u_max = 0.1
 nu = (1 / omega - 0.5) / 3
 
@@ -102,11 +102,8 @@ shifts = [(int(c[0, i]), int(c[1, i])) for i in range(9)]
 
 @jax.jit
 def stream(f):
-    f_new = jnp.zeros_like(f)
-    for i in range(9):
-        dx, dy = shifts[i]
-        f_new = f_new.at[i].set(jnp.roll(f[i], shift=(dx, dy), axis=(0,1)))
-    return f_new
+    return jnp.stack([jnp.roll(f[i], shift=(shifts[i][0], shifts[i][1]), axis=(0,1)) for i in range(9)], axis=0)
+
 
 opposite = jnp.array([0, 3, 4, 1, 2, 7, 8, 5, 6])
 
@@ -128,10 +125,10 @@ def corner_bottom_right(f):
 
 def apply_bounce_back(f, is_left, is_right, is_bottom):
     f = jax.lax.cond(is_left, lambda f: bounce_from_left(f), lambda f: f, f)
-    # f = jax.lax.cond(is_right, lambda f: bounce_from_right(f), lambda f: f, f)
+    f = jax.lax.cond(is_right, lambda f: bounce_from_right(f), lambda f: f, f)
     f = jax.lax.cond(is_bottom, lambda f: bounce_from_bottom(f), lambda f: f, f)
    
-    # Only apply corners if at corresponding edges, to avoid out-of-bound errors
+    #Only apply corners if at corresponding edges, to avoid out-of-bound errors
     f = jax.lax.cond(is_left & is_top_edge, corner_top_left, lambda f: f, f)
     f = jax.lax.cond(is_right & is_top_edge, corner_top_right, lambda f: f, f)
     f = jax.lax.cond(is_left & is_bottom, corner_bottom_left, lambda f: f, f)
@@ -151,7 +148,6 @@ def apply_top_lid_velocity(f, is_top, u_lid=jnp.array([-u_max, 0.0])):
             ci_dot_u = c[0, i_] * u_lid[0] + c[1, i_] * u_lid[1]
             correction = 6.0 * w[i_] * rho_wall * ci_dot_u
             f = f.at[i_, 1:-1, -2].set(f[i_opp, 1:-1, -2] - correction)
-            # f = jnp.maximum(f, 0.0)
             return f
 
         f = jax.lax.fori_loop(0, len(incoming), body, f)
@@ -225,7 +221,7 @@ is_right_edge = jnp.array(is_right_edge, dtype=bool)
 is_bottom_edge = jnp.array(is_bottom_edge, dtype=bool)
 is_top_edge = jnp.array(is_top_edge, dtype=bool)
 
-#Testing:
+
 def communicate(f_ikl, comm_cart, left_src, left_dst, right_src, right_dst,
                 bottom_src, bottom_dst, top_src, top_dst):
     # print(f"[Rank {rank}] Starting communicate()", flush=True, file=sys.stderr)
@@ -246,18 +242,19 @@ def communicate(f_ikl, comm_cart, left_src, left_dst, right_src, right_dst,
     f_np[:, 0, :] = recvbuf_right  
     
     # print(f"[Rank {rank}] Communicating BOTTOM", flush=True)
-    sendbuf_bottom = np.ascontiguousarray(f_np[:, :, 1])
-    recvbuf_bottom = np.ascontiguousarray(f_np[:, :, -1])
-    comm_cart.Sendrecv(sendbuf=sendbuf_bottom, dest=bottom_dst, sendtag=2,
+    if py > 1:
+        sendbuf_bottom = np.ascontiguousarray(f_np[:, :, 1])
+        recvbuf_bottom = np.ascontiguousarray(f_np[:, :, -1])
+        comm_cart.Sendrecv(sendbuf=sendbuf_bottom, dest=bottom_dst, sendtag=2,
                        recvbuf=recvbuf_bottom, source=bottom_src, recvtag=2)
-    f_np[:, :, -1] = recvbuf_bottom  
+        f_np[:, :, -1] = recvbuf_bottom  
     
-    # print(f"[Rank {rank}] Communicating TOP", flush=True)
-    sendbuf_top = np.ascontiguousarray(f_np[:, :, -2])
-    recvbuf_top = np.ascontiguousarray(f_np[:, :, 0])
-    comm_cart.Sendrecv(sendbuf=sendbuf_top, dest=top_dst, sendtag=3,
+        # print(f"[Rank {rank}] Communicating TOP", flush=True)
+        sendbuf_top = np.ascontiguousarray(f_np[:, :, -2])
+        recvbuf_top = np.ascontiguousarray(f_np[:, :, 0])
+        comm_cart.Sendrecv(sendbuf=sendbuf_top, dest=top_dst, sendtag=3,
                        recvbuf=recvbuf_top, source=top_src, recvtag=3)
-    f_np[:, :, 0] = recvbuf_top  
+        f_np[:, :, 0] = recvbuf_top  
 
     return jnp.array(f_np)
 
@@ -309,9 +306,9 @@ with mesh:
             f_cpu = communicate(
                     f_cpu, comm_cart,
                     left_src, left_dst, right_src, right_dst,
-                    bottom_src, bottom_dst, top_src, top_dst
+                    bottom_src, bottom_dst, top_src, top_dst,
+                    py
             )
-            # f_cpu = communicate(f_cpu)
             if not is_left_edge:
                 # print(f"[Rank {rank}] Sent to left: {f_cpu[:,1,:]}")
                 # print(f"[Rank {rank}] Received left halo: {f_cpu[:,0,:]}")
@@ -383,22 +380,6 @@ with mesh:
                 # Streamplot
                 ax.streamplot(X, Y, u_x.T, u_y.T, density=1.2, linewidth=1, arrowsize=1.5)
 
-                # Add ghost cell highlights (assuming 1-cell thick halo)
-                halo_thickness = 1
-
-                # Left
-                ax.add_patch(patches.Rectangle((0, 0), halo_thickness, NX, linewidth=1, edgecolor='red',
-                               facecolor='red', alpha=0.2, label='Ghost Cells'))
-                # Right
-                ax.add_patch(patches.Rectangle((NY - halo_thickness, 0), halo_thickness, NX, linewidth=1, edgecolor='red',
-                               facecolor='red', alpha=0.2))
-                # Bottom
-                ax.add_patch(patches.Rectangle((0, 0), NY, halo_thickness, linewidth=1, edgecolor='red',
-                               facecolor='red', alpha=0.2))
-                # Top
-                ax.add_patch(patches.Rectangle((0, NX - halo_thickness), NY, halo_thickness, linewidth=1, edgecolor=None,
-                               facecolor='red', alpha=0.2))
-
                 # Labels and aesthetics
                 ax.set_xlim(xlim)
                 ax.set_ylim(ylim)
@@ -407,8 +388,6 @@ with mesh:
                 ax.set_ylabel("Y")
                 ax.axis("equal")
                 ax.grid(True)
-                # fig.colorbar(im, ax=ax, label='Divergence')
-                ax.legend(loc='upper right')
                 plt.tight_layout()
                 plt.savefig(f'frames/streamplot_{step:05d}.png')
                 plt.close()
