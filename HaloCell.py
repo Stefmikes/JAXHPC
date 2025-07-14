@@ -42,7 +42,7 @@ print(f"JAX backend: {jax.default_backend()}")
 
 # ✅ Simulation parameters
 NX, NY = 4, 4
-NSTEPS = 2000
+NSTEPS = 200
 omega = 0.16
 u_max = 0.1
 nu = (1 / omega - 0.5) / 3
@@ -310,22 +310,23 @@ with mesh:
     start = time.time()
 
     for step in range(NSTEPS):
+        f.block_until_ready()  # Ensure f is ready before proceeding
         f_cpu = f.addressable_data(0)  # Get CPU array for MPI communication            
                 
         if size> 1:
             # print(f"[Rank {rank}] Step {step} communicating halos...", flush=True, file=sys.stderr)
             f_cpu = communicate(f_cpu)
             if not is_left_edge:
-                print(f"[Rank {rank}] Sent to left: {f[:,1,:]}")
-                print(f"[Rank {rank}] Received left halo: {f[:,0,:]}")
-                diff_left = jnp.abs(f[:,1,:] - f[:,0,:])  # inner vs received halo
+                print(f"[Rank {rank}] Sent to left: {f_cpu[:,1,:]}")
+                print(f"[Rank {rank}] Received left halo: {f_cpu[:,0,:]}")
+                diff_left = jnp.abs(f_cpu[:,1,:] - f_cpu[:,0,:])  # inner vs received halo
                 print(f"[STEP:{step}] [Rank {rank}] Max left halo mismatch: {diff_left.max()}")
 
             # For right boundary
             if not is_right_edge:
-                print(f"[Rank {rank}] Sent to right: {f[:,-2,:]}")
-                print(f"[Rank {rank}] Received right halo: {f[:,-1,:]}")
-                diff_right = jnp.abs(f[:,-2,:] - f[:,-1,:])  # inner vs received halo
+                print(f"[Rank {rank}] Sent to right: {f_cpu[:,-2,:]}")
+                print(f"[Rank {rank}] Received right halo: {f_cpu[:,-1,:]}")
+                diff_right = jnp.abs(f_cpu[:,-2,:] - f_cpu[:,-1,:])  # inner vs received halo
                 print(f"[STEP:{step}] [Rank {rank}] Max right halo mismatch: {diff_right.max()}")
 
         f = jax.device_put(f_cpu, f.sharding)  
