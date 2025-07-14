@@ -232,20 +232,32 @@ def communicate(f_ikl, comm_cart, left_src, left_dst, right_src, right_dst,
     f_np = np.array(f_ikl)  # Ensure mutable array for MPI
 
     print(f"[Rank {rank}] Communicating LEFT", flush=True)
-    comm_cart.Sendrecv(f_np[:, 1, :], dest=left_dst, sendtag=0,
-                  recvbuf=f_np[:, -1, :], source=left_src, recvtag=0)
+    sendbuf_left = np.ascontiguousarray(f_np[:, 1, :])
+    recvbuf_left = np.ascontiguousarray(f_np[:, -1, :])
+    comm_cart.Sendrecv(sendbuf=sendbuf_left, dest=left_dst, sendtag=0,
+                       recvbuf=recvbuf_left, source=left_src, recvtag=0)
+    f_np[:, -1, :] = recvbuf_left  
     
     print(f"[Rank {rank}] Communicating RIGHT", flush=True)
-    comm_cart.Sendrecv(f_np[:, -2, :], dest=right_dst, sendtag=1,
-                  recvbuf=f_np[:, 0, :], source=right_src, recvtag=1)
+    sendbuf_right = np.ascontiguousarray(f_np[:, -2, :])
+    recvbuf_right = np.ascontiguousarray(f_np[:, 0, :])
+    comm_cart.Sendrecv(sendbuf=sendbuf_right, dest=right_dst, sendtag=1,
+                       recvbuf=recvbuf_right, source=right_src, recvtag=1)
+    f_np[:, 0, :] = recvbuf_right  
     
     print(f"[Rank {rank}] Communicating BOTTOM", flush=True)
-    comm_cart.Sendrecv(f_np[:, :, 1], dest=bottom_dst, sendtag=2,
-                  recvbuf=f_np[:, :, -1], source=bottom_src, recvtag=2)
+    sendbuf_bottom = np.ascontiguousarray(f_np[:, :, 1])
+    recvbuf_bottom = np.ascontiguousarray(f_np[:, :, -1])
+    comm_cart.Sendrecv(sendbuf=sendbuf_bottom, dest=bottom_dst, sendtag=2,
+                       recvbuf=recvbuf_bottom, source=bottom_src, recvtag=2)
+    f_np[:, :, -1] = recvbuf_bottom  
     
     print(f"[Rank {rank}] Communicating TOP", flush=True)
-    comm_cart.Sendrecv(f_np[:, :, -2], dest=top_dst, sendtag=3,
-                  recvbuf=f_np[:, :, 0], source=top_src, recvtag=3)
+    sendbuf_top = np.ascontiguousarray(f_np[:, :, -2])
+    recvbuf_top = np.ascontiguousarray(f_np[:, :, 0])
+    comm_cart.Sendrecv(sendbuf=sendbuf_top, dest=top_dst, sendtag=3,
+                       recvbuf=recvbuf_top, source=top_src, recvtag=3)
+    f_np[:, :, 0] = recvbuf_top  
 
     return jnp.array(f_np)
 
@@ -346,7 +358,7 @@ with mesh:
     for step in range(NSTEPS):
         f.block_until_ready()  # Ensure f is ready before proceeding
         f_cpu = f.addressable_data(0)  # Get CPU array for MPI communication            
-                
+        comm_cart.barrier()     
         if size > 1:
             # print(f"[Rank {rank}] Step {step} communicating halos...", flush=True, file=sys.stderr)
             f_cpu = communicate(
@@ -367,7 +379,7 @@ with mesh:
                 print(f"[Rank {rank}] Received right halo: {f_cpu[:,-1,:]}")
                 diff_right = jnp.abs(f_cpu[:,-2,:] - f_cpu[:,-1,:])  # inner vs received halo
                 print(f"[STEP:{step}] [Rank {rank}] Max right halo mismatch: {diff_right.max()}")
-
+        comm_cart.barrier() 
         f = jax.device_put(f_cpu, f.sharding)  
 
         f = lbm_collide_stream(f, is_left_edge, is_right_edge, is_bottom_edge, is_top_edge)
