@@ -210,8 +210,6 @@ coords = comm_cart.Get_coords(rank)
 
 left_src, left_dst = comm_cart.Shift(direction=0, disp=-1)
 right_src, right_dst = comm_cart.Shift(direction=0, disp=1)
-bottom_src, bottom_dst = comm_cart.Shift(direction=1, disp=-1)
-top_src, top_dst = comm_cart.Shift(direction=1, disp=1)
 
 # left_src = rank - 1 if coords[0] > 0 else MPI.PROC_NULL
 # left_dst = rank - 1 if coords[0] > 0 else MPI.PROC_NULL
@@ -231,84 +229,62 @@ is_bottom_edge = jnp.array(is_bottom_edge, dtype=bool)
 is_top_edge = jnp.array(is_top_edge, dtype=bool)
 
 def communicate(f_ikl):
-    f_np = np.array(f_ikl)  # Convert from JAX to NumPy
+    f_np = np.array(f_ikl)  # Ensure correct type
 
-    # Create temporary contiguous buffers for receive
-    recv_left = np.empty_like(f_np[:, -1, :])
-    recv_right = np.empty_like(f_np[:, 0, :])
-    recv_bottom = np.empty_like(f_np[:, :, -1])
-    recv_top = np.empty_like(f_np[:, :, 0])
-
-    # X-direction communication (left and right)
-    comm.Sendrecv(sendbuf=f_np[:, 1, :].copy(), dest=left_dst,
-                  recvbuf=recv_left, source=left_src)
-    comm.Sendrecv(sendbuf=f_np[:, -2, :].copy(), dest=right_dst,
-                  recvbuf=recv_right, source=right_src)
-
-    # Y-direction communication (bottom and top)
-    comm.Sendrecv(sendbuf=f_np[:, :, 1].copy(), dest=bottom_dst,
-                  recvbuf=recv_bottom, source=bottom_src)
-    comm.Sendrecv(sendbuf=f_np[:, :, -2].copy(), dest=top_dst,
-                  recvbuf=recv_top, source=top_src)
-
-    # Set the halo regions with received data
-    f_np[:, -1, :] = recv_left
-    f_np[:, 0, :] = recv_right
-    f_np[:, :, -1] = recv_bottom
-    f_np[:, :, 0] = recv_top
-
-    return jnp.array(f_np)
+    # print(f"[Rank {rank}] Starting communicate()", flush=True, file=sys.stderr)
 
     # LEFT-RIGHT communication
-    # send_to_left = f_np[:, 1, :].copy()    # left inner boundary (index 1)
-    # send_to_right = f_np[:, -2, :].copy()  # right inner boundary (index -2)
+    send_to_left = f_np[:, 1, :].copy()    # left inner boundary (index 1)
+    send_to_right = f_np[:, -2, :].copy()  # right inner boundary (index -2)
 
 
-    # recv_from_left = np.empty_like(send_to_left)
-    # recv_from_right = np.empty_like(send_to_right)
+    recv_from_left = np.empty_like(send_to_left)
+    recv_from_right = np.empty_like(send_to_right)
 
 
-    # requests = []
+    requests = []
 
-    # # # Send left inner boundary to left neighbor, receive left halo from left neighbor
-    # # if left_dst != MPI.PROC_NULL:
-    # #     req_send_left = comm_cart.Isend(send_to_left, dest=left_dst)
-    # #     req_recv_left = comm_cart.Irecv(recv_from_left, source=left_src)
-    # #     requests.extend([req_send_left, req_recv_left])
-
-    # # # Send right inner boundary to right neighbor, receive right halo from right neighbor
-    # # if right_dst != MPI.PROC_NULL:
-    # #     req_send_right = comm_cart.Isend(send_to_right, dest=right_dst)
-    # #     req_recv_right = comm_cart.Irecv(recv_from_right, source=right_src)
-    # #     requests.extend([req_send_right, req_recv_right])
-
+    # # Send left inner boundary to left neighbor, receive left halo from left neighbor
     # if left_dst != MPI.PROC_NULL:
     #     req_send_left = comm_cart.Isend(send_to_left, dest=left_dst)
-    #     requests.append(req_send_left)
-
-    # if left_src != MPI.PROC_NULL:
     #     req_recv_left = comm_cart.Irecv(recv_from_left, source=left_src)
-    #     requests.append(req_recv_left)
+    #     requests.extend([req_send_left, req_recv_left])
 
-        
+    # # Send right inner boundary to right neighbor, receive right halo from right neighbor
     # if right_dst != MPI.PROC_NULL:
     #     req_send_right = comm_cart.Isend(send_to_right, dest=right_dst)
-    #     requests.append(req_send_right)
-
-    # if right_src != MPI.PROC_NULL:
     #     req_recv_right = comm_cart.Irecv(recv_from_right, source=right_src)
-    #     requests.append(req_recv_right)
+    #     requests.extend([req_send_right, req_recv_right])
 
-    # MPI.Request.Waitall(requests)
-    # # Fill halos after communication
-    # if left_src != MPI.PROC_NULL:
-    #     f_np[:, 0, :] = recv_from_left  # left halo at index 0
+    if left_dst != MPI.PROC_NULL:
+        req_send_left = comm_cart.Isend(send_to_left, dest=left_dst)
+        requests.append(req_send_left)
 
-    # if right_src != MPI.PROC_NULL:
-    #     f_np[:, -1, :] = recv_from_right  # right halo at index -1
+    if left_src != MPI.PROC_NULL:
+        req_recv_left = comm_cart.Irecv(recv_from_left, source=left_src)
+        requests.append(req_recv_left)
+
+        
+    if right_dst != MPI.PROC_NULL:
+        req_send_right = comm_cart.Isend(send_to_right, dest=right_dst)
+        requests.append(req_send_right)
+
+    if right_src != MPI.PROC_NULL:
+        req_recv_right = comm_cart.Irecv(recv_from_right, source=right_src)
+        requests.append(req_recv_right)
+
+    print(f"[Rank {rank}] Before MPI.Waitall", flush=True)
+    MPI.Request.Waitall(requests)
+    print(f"[Rank {rank}] After MPI.Waitall", flush=True)
+    # Fill halos after communication
+    if left_src != MPI.PROC_NULL:
+        f_np[:, 0, :] = recv_from_left  # left halo at index 0
+
+    if right_src != MPI.PROC_NULL:
+        f_np[:, -1, :] = recv_from_right  # right halo at index -1
 
 
-    # return jnp.array(f_np)
+    return jnp.array(f_np)
 
 local_devices = jax.local_devices()
 print(f"Process {jax.process_index()} local devices:", local_devices)
@@ -378,6 +354,7 @@ with mesh:
             if rank == 0:
 
                 try:
+                    
                     # Normalize shard shapes
                     normalized_shards = []
                     for shard in all_shards:
