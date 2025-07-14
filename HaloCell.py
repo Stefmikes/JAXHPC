@@ -41,9 +41,9 @@ print(f"Process {jax.process_index()} on {socket.gethostname()} using {jax.local
 print(f"JAX backend: {jax.default_backend()}")
 
 # ✅ Simulation parameters
-NX, NY = 300, 300
-NSTEPS = 10000
-omega = 1.6
+NX, NY = 1000, 1000
+NSTEPS = 1000
+omega = 1.3
 u_max = 0.1
 nu = (1 / omega - 0.5) / 3
 
@@ -59,13 +59,13 @@ nu = (1 / omega - 0.5) / 3
 
 
 #Try 1 Dimension mesh decomposition
-px = size  # Decompose only in X direction
-py = 1     # No decomposition in Y
+px = 1  # Decompose only in X direction
+py = size     # No decomposition in Y
 
 assert NX % px == 0, f"NX not divisible by number of processes: NX={NX}, px={px}"
 
-local_NX = NX // px
-local_NY = NY
+local_NX = NX 
+local_NY = NY //py
 
 # New local shape with halos
 local_NX_halo = local_NX + 2
@@ -156,13 +156,22 @@ def apply_top_lid_velocity(f, is_top, u_lid=jnp.array([-u_max, 0.0])):
     return jax.lax.cond(is_top, do_lid_velocity, lambda f: f, f)
 
 
-ix = jax.process_index()
-iy = 0
+# ix = jax.process_index()
+# iy = 0
 
-x_start = ix * local_NX
-y_start = 0
-x_end = x_start + local_NX
-y_end = NY
+# x_start = ix * local_NX
+# y_start = 0
+# x_end = x_start + local_NX
+# y_end = NY
+
+#split in Y axis
+ix = 0
+iy = jax.process_index()
+
+x_start = 0
+y_start = iy * local_NY
+x_end = NX
+y_end = y_start + local_NY
 
 print(f"Using 2D mesh shape: ({px}, {py})")
 print(f"Global domain: {NX}x{NY}, Steps: {NSTEPS}")
@@ -199,9 +208,9 @@ f0 = f0.at[:, 0, -1].set(f0[:, 1, -2])
 f0 = f0.at[:, -1, 0].set(f0[:, -2, 1])
 f0 = f0.at[:, -1, -1].set(f0[:, -2, -2])
 
-ndx, ndy = px, py  # process grid dims
+# ndx, ndy = px, py  # process grid dims
 
-comm_cart = comm.Create_cart((ndx, ndy), periods=(False, False))
+comm_cart = comm.Create_cart((px, py), periods=(False, False))
 coords = comm_cart.Get_coords(rank)
 
 left_src, left_dst = comm_cart.Shift(direction=0, disp=-1)
@@ -223,23 +232,24 @@ is_top_edge = jnp.array(is_top_edge, dtype=bool)
 
 
 def communicate(f_ikl, comm_cart, left_src, left_dst, right_src, right_dst,
-                bottom_src, bottom_dst, top_src, top_dst,py):
+                bottom_src, bottom_dst, top_src, top_dst,px,py):
     # print(f"[Rank {rank}] Starting communicate()", flush=True, file=sys.stderr)
     f_np = np.array(f_ikl)  # Ensure mutable array for MPI
 
+    if px > 1:
     # print(f"[Rank {rank}] Communicating LEFT", flush=True)
-    sendbuf_left = np.ascontiguousarray(f_np[:, 1, :])
-    recvbuf_left = np.ascontiguousarray(f_np[:, -1, :])
-    comm_cart.Sendrecv(sendbuf=sendbuf_left, dest=left_dst, sendtag=0,
+        sendbuf_left = np.ascontiguousarray(f_np[:, 1, :])
+        recvbuf_left = np.ascontiguousarray(f_np[:, -1, :])
+        comm_cart.Sendrecv(sendbuf=sendbuf_left, dest=left_dst, sendtag=0,
                        recvbuf=recvbuf_left, source=left_src, recvtag=0)
-    f_np[:, -1, :] = recvbuf_left  
+        f_np[:, -1, :] = recvbuf_left  
     
     # print(f"[Rank {rank}] Communicating RIGHT", flush=True)
-    sendbuf_right = np.ascontiguousarray(f_np[:, -2, :])
-    recvbuf_right = np.ascontiguousarray(f_np[:, 0, :])
-    comm_cart.Sendrecv(sendbuf=sendbuf_right, dest=right_dst, sendtag=1,
+        sendbuf_right = np.ascontiguousarray(f_np[:, -2, :])
+        recvbuf_right = np.ascontiguousarray(f_np[:, 0, :])
+        comm_cart.Sendrecv(sendbuf=sendbuf_right, dest=right_dst, sendtag=1,
                        recvbuf=recvbuf_right, source=right_src, recvtag=1)
-    f_np[:, 0, :] = recvbuf_right  
+        f_np[:, 0, :] = recvbuf_right  
     
     # print(f"[Rank {rank}] Communicating BOTTOM", flush=True)
     if py > 1:
@@ -264,7 +274,7 @@ print(f"Process {jax.process_index()} local devices:", local_devices)
 local_mesh_shape = (len(local_devices),)  # 1D mesh for simplicity
 local_device_mesh = mesh_utils.create_device_mesh(local_mesh_shape, devices=local_devices)
 
-mesh = Mesh(local_device_mesh, axis_names=('x',))  # Use axis_names matching mesh dims
+mesh = Mesh(local_device_mesh, axis_names=('y',))  # Use axis_names matching mesh dims
 
 #  Device mesh setup (same as before)
 # mesh = Mesh(mesh_utils.create_device_mesh((px, py)), axis_names=('x', 'y'))
@@ -272,7 +282,7 @@ mesh = Mesh(local_device_mesh, axis_names=('x',))  # Use axis_names matching mes
 
 with mesh:
     # sharding = NamedSharding(mesh, P(None, 'x', 'y'))
-    sharding = NamedSharding(mesh, P(None,'x'))  
+    sharding = NamedSharding(mesh, P(None,'y'))  
 
     f = jax.device_put(f0, sharding)
 
@@ -285,8 +295,8 @@ with mesh:
 
     lbm_collide_stream = pjit(
         lbm_collide_stream,
-        in_shardings=(P(None, 'x'), P(), P(), P(), P()),
-        out_shardings=P(None, 'x'),
+        in_shardings=(P(None, 'y'), P(), P(), P(), P()),
+        out_shardings=P(None, 'y'),
     )
 
     print("Sharding info:", f.sharding)
@@ -307,7 +317,7 @@ with mesh:
                     f_cpu, comm_cart,
                     left_src, left_dst, right_src, right_dst,
                     bottom_src, bottom_dst, top_src, top_dst,
-                    py
+                    px, py
             )
             if not is_left_edge:
                 # print(f"[Rank {rank}] Sent to left: {f_cpu[:,1,:]}")
@@ -326,71 +336,71 @@ with mesh:
 
         f = lbm_collide_stream(f, is_left_edge, is_right_edge, is_bottom_edge, is_top_edge)
       
-        if step % 100 == 0:
-            rho = jnp.einsum('ijk->jk', f[:, 1:-1, 1:-1])
-            u = jnp.einsum('ai,ixy->axy', c, f[:, 1:-1, 1:-1]) / rho
-            u_gathered = multihost_utils.process_allgather(u)
-            u_np = np.array(u_gathered)
-            all_shards = comm.gather(u_np, root=0)
+        # if step % 100 == 0:
+        #     rho = jnp.einsum('ijk->jk', f[:, 1:-1, 1:-1])
+        #     u = jnp.einsum('ai,ixy->axy', c, f[:, 1:-1, 1:-1]) / rho
+        #     u_gathered = multihost_utils.process_allgather(u)
+        #     u_np = np.array(u_gathered)
+        #     all_shards = comm.gather(u_np, root=0)
 
-            if rank == 0:
+        #     if rank == 0:
 
-                try:
+        #         try:
                     
-                    # Normalize shard shapes
-                    normalized_shards = []
-                    for shard in all_shards:
-                        while shard.ndim > 3:
-                            shard = shard[0]  # strip excess batch dim
-                        assert shard.shape[0] == 2, f"Unexpected shard shape: {shard.shape}"
-                        normalized_shards.append(shard)
+        #             # Normalize shard shapes
+        #             normalized_shards = []
+        #             for shard in all_shards:
+        #                 while shard.ndim > 3:
+        #                     shard = shard[0]  # strip excess batch dim
+        #                 assert shard.shape[0] == 2, f"Unexpected shard shape: {shard.shape}"
+        #                 normalized_shards.append(shard)
 
-                    # Concatenate along sharded axis (X)
-                    u_combined = np.concatenate(normalized_shards, axis=1)
+        #             # Concatenate along sharded axis (X)
+        #             u_combined = np.concatenate(normalized_shards, axis=1)
 
                
-                    print(f"Reconstructed shape: {u_combined.shape}")
-                    assert u_combined.shape == (2, NX, NY), \
-                        f"u_combined.shape = {u_combined.shape}, expected (2, {NX}, {NY})"
+        #             print(f"Reconstructed shape: {u_combined.shape}")
+        #             assert u_combined.shape == (2, NX, NY), \
+        #                 f"u_combined.shape = {u_combined.shape}, expected (2, {NX}, {NY})"
 
-                except Exception as e:
-                    print("Concatenation failed:", e)
-                    raise
+        #         except Exception as e:
+        #             print("Concatenation failed:", e)
+        #             raise
 
-                u_x = u_combined[0]
-                u_y = u_combined[1]
+        #         u_x = u_combined[0]
+        #         u_y = u_combined[1]
 
-                speed = np.sqrt(u_x**2 + u_y**2)
-                print(f"Step {step}: top lid max u_x = {u_x[:, -1].max():.4f}")
+        #         speed = np.sqrt(u_x**2 + u_y**2)
+        #         print(f"Step {step}: top lid max u_x = {u_x[:, -1].max():.4f}")
 
-                ix = min(NX // 2, u_x.shape[0] - 1)
-                iy = min(NY // 8, u_x.shape[1] - 1)
-                amp.append(u_x[ix, iy])
+        #         ix = min(NX // 2, u_x.shape[0] - 1)
+        #         iy = min(NY // 8, u_x.shape[1] - 1)
+        #         amp.append(u_x[ix, iy])
 
-                profiles.append(u_x[NX // 2, :].copy())  # now safe!
+        #         profiles.append(u_x[NX // 2, :].copy())  # now safe!
 
-                # Meshgrid with correct dimensions for streamplot
-                X, Y = np.meshgrid(np.arange(NY), np.arange(NX))
-                xlim = (0, NY)
-                ylim = (0, NX)
+        #         # Meshgrid with correct dimensions for streamplot
+        #         X, Y = np.meshgrid(np.arange(NY), np.arange(NX))
+        #         xlim = (0, NY)
+        #         ylim = (0, NX)
+                
+        #         # Plot
+        #         fig, ax = plt.subplots(figsize=(7, 6))
 
-                # Plot
-                fig, ax = plt.subplots(figsize=(7, 6))
+        #         # Streamplot
+        #         ax.streamplot(X, Y, u_x.T, u_y.T, density=1.2, linewidth=1, arrowsize=1.5)
 
-                # Streamplot
-                ax.streamplot(X, Y, u_x.T, u_y.T, density=1.2, linewidth=1, arrowsize=1.5)
-
-                # Labels and aesthetics
-                ax.set_xlim(xlim)
-                ax.set_ylim(ylim)
-                ax.set_title(f'Lid-driven cavity flow (Steps:{step:05d})')
-                ax.set_xlabel("X")
-                ax.set_ylabel("Y")
-                ax.axis("equal")
-                ax.grid(True)
-                plt.tight_layout()
-                plt.savefig(f'frames/streamplot_{step:05d}.png')
-                plt.close()
+        #         # Labels and aesthetics
+        #         ax.set_xlim(xlim)
+        #         ax.set_ylim(ylim)
+        #         ax.set_title(f'Lid-driven cavity flow (Steps:{step:05d})')
+        #         ax.set_xlabel("X")
+        #         ax.set_ylabel("Y")
+        #         ax.axis("equal")
+        #         ax.grid(True)
+        #         plt.tight_layout()
+        #         plt.savefig(f'frames/streamplot_{step:05d}.png')
+        #         plt.close()
 
     end = time.time()
 
@@ -404,12 +414,12 @@ print(f"BLUPS: {blups:.3f}")
 print(f"Domain: {NX}x{NY}, Steps: {NSTEPS}")
 print(f"Viscosity: {nu:.4e}")
 
-if rank == 0:
-    import imageio
-    for prefix in ['streamplot']:
-        with imageio.get_writer(f'{prefix}.gif', mode='I', duration=0.5) as writer:
-            for step in range(0, NSTEPS,100):
-                filename = f'frames/{prefix}_{step:05d}.png'
-                if os.path.exists(filename):
-                    image = imageio.imread(filename)
-                    writer.append_data(image)
+# if rank == 0:
+#     import imageio
+#     for prefix in ['streamplot']:
+#         with imageio.get_writer(f'{prefix}.gif', mode='I', duration=0.5) as writer:
+#             for step in range(0, NSTEPS,100):
+#                 filename = f'frames/{prefix}_{step:05d}.png'
+#                 if os.path.exists(filename):
+#                     image = imageio.imread(filename)
+#                     writer.append_data(image)
