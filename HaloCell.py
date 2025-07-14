@@ -369,8 +369,8 @@ with mesh:
                         assert shard.shape[0] == 2, f"Unexpected shard shape: {shard.shape}"
                         normalized_shards.append(shard)
 
-                    # Concatenate along sharded axis (X)
-                    u_combined = np.concatenate(normalized_shards, axis=1)
+                    # Concatenate along sharded axis (X==1, Y ==2)
+                    u_combined = np.concatenate(normalized_shards, axis=2)
 
                
                     print(f"Reconstructed shape: {u_combined.shape}")
