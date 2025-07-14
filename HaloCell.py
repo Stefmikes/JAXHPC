@@ -261,61 +261,6 @@ def communicate(f_ikl, comm_cart, left_src, left_dst, right_src, right_dst,
 
     return jnp.array(f_np)
 
-# def communicate(f_ikl):
-#     f_np = np.array(f_ikl)  # Ensure correct type
-
-#     # print(f"[Rank {rank}] Starting communicate()", flush=True, file=sys.stderr)
-
-#     # LEFT-RIGHT communication
-#     send_to_left = f_np[:, 1, :].copy()    # left inner boundary (index 1)
-#     send_to_right = f_np[:, -2, :].copy()  # right inner boundary (index -2)
-
-
-#     recv_from_left = np.empty_like(send_to_left)
-#     recv_from_right = np.empty_like(send_to_right)
-
-
-#     requests = []
-
-#     if left_dst != MPI.PROC_NULL:
-#         if rank == 1:  # Or whichever rank you're debugging
-#             print(f"[STEP {step}] [Rank {rank}] send_to_left before send: {send_to_left}")
-#         req_send_left = comm_cart.Isend(send_to_left, dest=left_dst)
-#         requests.append(req_send_left)
-
-#     if left_src != MPI.PROC_NULL:
-#         req_recv_left = comm_cart.Irecv(recv_from_left, source=left_src)
-#         requests.append(req_recv_left)
-
-#     if right_dst != MPI.PROC_NULL:
-#         if rank == 1:  # Or whichever rank you're debugging
-#             print(f"[STEP {step}] [Rank {rank}] send_to_right before send: {send_to_right}")
-#         req_send_right = comm_cart.Isend(send_to_right, dest=right_dst)
-#         requests.append(req_send_right)
-
-#     if right_src != MPI.PROC_NULL:
-#         req_recv_right = comm_cart.Irecv(recv_from_right, source=right_src)
-#         requests.append(req_recv_right)
-
-#     print(f"[Rank {rank}] Before MPI.Waitall", flush=True)
-#     MPI.Request.Waitall(requests)
-#     print(f"[Rank {rank}] After MPI.Waitall", flush=True)
-#     # Fill halos after communication
-#     if left_src != MPI.PROC_NULL:
-#         f_np[:, 0, :] = recv_from_left  # left halo at index 0
-
-#     if right_src != MPI.PROC_NULL:
-#         f_np[:, -1, :] = recv_from_right  # right halo at index -1
-
-#     if left_src != MPI.PROC_NULL and rank == 1:
-#         print(f"[STEP {step}][Rank {rank}] recv_from_left after receive: {recv_from_left}")
-
-#     if right_src != MPI.PROC_NULL and rank == 1:
-#         print(f"[STEP {step}][Rank {rank}] recv_from_right after receive: {recv_from_right}")
-
-
-#     return jnp.array(f_np)
-
 local_devices = jax.local_devices()
 print(f"Process {jax.process_index()} local devices:", local_devices)
 
@@ -337,7 +282,7 @@ with mesh:
     def lbm_collide_stream(f, is_left, is_right, is_bottom, is_top):
         f, _ = collide(f)
         f = stream(f)
-        f = apply_bounce_back(f, is_left, is_right, is_bottom)
+        # f = apply_bounce_back(f, is_left, is_right, is_bottom)
         f = apply_top_lid_velocity(f, is_top)
         return f
 
