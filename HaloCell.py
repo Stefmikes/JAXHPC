@@ -42,7 +42,7 @@ print(f"JAX backend: {jax.default_backend()}")
 
 # ✅ Simulation parameters
 NX, NY = 4, 4
-NSTEPS = 100
+NSTEPS = 2000
 omega = 0.16
 u_max = 0.1
 nu = (1 / omega - 0.5) / 3
@@ -319,14 +319,14 @@ with mesh:
                 print(f"[Rank {rank}] Sent to left: {f[:,1,:]}")
                 print(f"[Rank {rank}] Received left halo: {f[:,0,:]}")
                 diff_left = jnp.abs(f[:,1,:] - f[:,0,:])  # inner vs received halo
-                print(f"[Rank {rank}] Max left halo mismatch: {diff_left.max()}")
+                print(f"[STEP:{step}] [Rank {rank}] Max left halo mismatch: {diff_left.max()}")
 
             # For right boundary
             if not is_right_edge:
                 print(f"[Rank {rank}] Sent to right: {f[:,-2,:]}")
                 print(f"[Rank {rank}] Received right halo: {f[:,-1,:]}")
                 diff_right = jnp.abs(f[:,-2,:] - f[:,-1,:])  # inner vs received halo
-                print(f"[Rank {rank}] Max right halo mismatch: {diff_right.max()}")
+                print(f"[STEP:{step}] [Rank {rank}] Max right halo mismatch: {diff_right.max()}")
 
         f = jax.device_put(f_cpu, f.sharding)  
 
@@ -390,16 +390,16 @@ with mesh:
                 halo_thickness = 1
 
                 # Left
-                ax.add_patch(patches.Rectangle((0, 0), halo_thickness, NX, linewidth=2, edgecolor='red',
+                ax.add_patch(patches.Rectangle((0, 0), halo_thickness, NX, linewidth=1, edgecolor='red',
                                facecolor='red', alpha=0.2, label='Ghost Cells'))
                 # Right
-                ax.add_patch(patches.Rectangle((NY - halo_thickness, 0), halo_thickness, NX, linewidth=2, edgecolor='red',
+                ax.add_patch(patches.Rectangle((NY - halo_thickness, 0), halo_thickness, NX, linewidth=1, edgecolor='red',
                                facecolor='red', alpha=0.2))
                 # Bottom
-                ax.add_patch(patches.Rectangle((0, 0), NY, halo_thickness, linewidth=2, edgecolor='red',
+                ax.add_patch(patches.Rectangle((0, 0), NY, halo_thickness, linewidth=1, edgecolor='red',
                                facecolor='red', alpha=0.2))
                 # Top
-                ax.add_patch(patches.Rectangle((0, NX - halo_thickness), NY, halo_thickness, linewidth=2, edgecolor=None,
+                ax.add_patch(patches.Rectangle((0, NX - halo_thickness), NY, halo_thickness, linewidth=1, edgecolor=None,
                                facecolor='red', alpha=0.2))
 
                 # Labels and aesthetics
