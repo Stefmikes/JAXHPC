@@ -317,18 +317,18 @@ with mesh:
                     bottom_src, bottom_dst, top_src, top_dst,
                     py
             )
-            if not is_left_edge:
+            # if not is_left_edge:
           #  #     print(f"[Rank {rank}] Sent to left: {f_cpu[:,1,:]}")
          #   #     print(f"[Rank {rank}] Received left halo: {f_cpu[:,0,:]}")
-                diff_left = jnp.abs(f_cpu[:,1,:] - f_cpu[:,0,:])  # inner vs received halo
-                print(f"[STEP:{step}] [Rank {rank}] Max left halo mismatch: {diff_left.max()}")
+                # diff_left = jnp.abs(f_cpu[:,1,:] - f_cpu[:,0,:])  # inner vs received halo
+                # print(f"[STEP:{step}] [Rank {rank}] Max left halo mismatch: {diff_left.max()}")
 
             # For right boundary
-            if not is_right_edge:
+            # if not is_right_edge:
            # #     print(f"[Rank {rank}] Sent to right: {f_cpu[:,-2,:]}")
             ##     print(f"[Rank {rank}] Received right halo: {f_cpu[:,-1,:]}")
-                diff_right = jnp.abs(f_cpu[:,-2,:] - f_cpu[:,-1,:])  # inner vs received halo
-                print(f"[STEP:{step}] [Rank {rank}] Max right halo mismatch: {diff_right.max()}")
+                # diff_right = jnp.abs(f_cpu[:,-2,:] - f_cpu[:,-1,:])  # inner vs received halo
+                # print(f"[STEP:{step}] [Rank {rank}] Max right halo mismatch: {diff_right.max()}")
         comm_cart.barrier() 
         f = jax.device_put(f_cpu, f.sharding)  
 
