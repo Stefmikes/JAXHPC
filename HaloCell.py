@@ -42,7 +42,7 @@ print(f"JAX backend: {jax.default_backend()}")
 
 # ✅ Simulation parameters
 NX, NY = 300, 300
-NSTEPS = 5000
+NSTEPS = 3000
 omega = 1.7
 u_max = 0.1
 nu = (1 / omega - 0.5) / 3
@@ -402,7 +402,7 @@ with mesh:
                 fig, ax = plt.subplots(figsize=(7, 6))
 
                 # Streamplot
-                ax.streamplot(X, Y, u_x.T, u_y.T, density=1.2, linewidth=1, arrowsize=1.5)
+                ax.streamplot(X, Y, u_x, u_y, density=1.2, linewidth=1, arrowsize=1.5)
 
                 # Labels and aesthetics
                 ax.set_xlim(xlim)
