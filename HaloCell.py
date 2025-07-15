@@ -42,7 +42,7 @@ print(f"JAX backend: {jax.default_backend()}")
 
 # ✅ Simulation parameters
 NX, NY = 300, 300
-NSTEPS = 2000
+NSTEPS = 10000
 omega = 1.6
 u_max = 0.1
 nu = (1 / omega - 0.5) / 3
@@ -230,78 +230,41 @@ is_bottom_edge = jnp.array(is_bottom_edge, dtype=bool)
 is_top_edge = jnp.array(is_top_edge, dtype=bool)
 
 
-# def communicate(f_ikl, comm_cart, left_src, left_dst, right_src, right_dst,
-#                 bottom_src, bottom_dst, top_src, top_dst,py):
-#     # print(f"[Rank {rank}] Starting communicate()", flush=True, file=sys.stderr)
-#     f_np = np.array(f_ikl)  # Ensure mutable array for MPI
-
-#     # print(f"[Rank {rank}] Communicating LEFT", flush=True)
-#     sendbuf_left = np.ascontiguousarray(f_np[:, 1, :])
-#     recvbuf_left = np.ascontiguousarray(f_np[:, -1, :])
-#     comm_cart.Sendrecv(sendbuf=sendbuf_left, dest=left_dst, sendtag=0,
-#                        recvbuf=recvbuf_left, source=left_src, recvtag=0)
-#     f_np[:, -1, :] = recvbuf_left  
-    
-#     # print(f"[Rank {rank}] Communicating RIGHT", flush=True)
-#     sendbuf_right = np.ascontiguousarray(f_np[:, -2, :])
-#     recvbuf_right = np.ascontiguousarray(f_np[:, 0, :])
-#     comm_cart.Sendrecv(sendbuf=sendbuf_right, dest=right_dst, sendtag=1,
-#                        recvbuf=recvbuf_right, source=right_src, recvtag=1)
-#     f_np[:, 0, :] = recvbuf_right  
-    
-#     # print(f"[Rank {rank}] Communicating BOTTOM", flush=True)
-#     if py > 1:
-#         sendbuf_bottom = np.ascontiguousarray(f_np[:, :, 1])
-#         recvbuf_bottom = np.ascontiguousarray(f_np[:, :, -1])
-#         comm_cart.Sendrecv(sendbuf=sendbuf_bottom, dest=bottom_dst, sendtag=2,
-#                        recvbuf=recvbuf_bottom, source=bottom_src, recvtag=2)
-#         f_np[:, :, -1] = recvbuf_bottom  
-    
-#         # print(f"[Rank {rank}] Communicating TOP", flush=True)
-#         sendbuf_top = np.ascontiguousarray(f_np[:, :, -2])
-#         recvbuf_top = np.ascontiguousarray(f_np[:, :, 0])
-#         comm_cart.Sendrecv(sendbuf=sendbuf_top, dest=top_dst, sendtag=3,
-#                        recvbuf=recvbuf_top, source=top_src, recvtag=3)
-#         f_np[:, :, 0] = recvbuf_top  
-
-#     return jnp.array(f_np)
-
-
 def communicate(f_ikl, comm_cart, left_src, left_dst, right_src, right_dst,
-                bottom_src, bottom_dst, top_src, top_dst, py):
+                bottom_src, bottom_dst, top_src, top_dst,py):
+    # print(f"[Rank {rank}] Starting communicate()", flush=True, file=sys.stderr)
     f_np = np.array(f_ikl)  # Ensure mutable array for MPI
 
-    # Exchange data with LEFT and RIGHT neighbors
-    # Send my right-most interior column to my right neighbor (right_dst)
-    # Receive from my left neighbor (left_src) into my left halo (index 0)
-    sendbuf_right = np.ascontiguousarray(f_np[:, -2, :])
-    recvbuf_left  = np.empty_like(sendbuf_right) # Buffer for data from left
-    comm_cart.Sendrecv(sendbuf=sendbuf_right, dest=right_dst, sendtag=0,
-                       recvbuf=recvbuf_left, source=left_src, recvtag=0)
-    # Only update the halo if the neighbor exists
-    if left_src != MPI.PROC_NULL:
-        f_np[:, 0, :] = recvbuf_left
-
-    # Send my left-most interior column to my left neighbor (left_dst)
-    # Receive from my right neighbor (right_src) into my right halo (index -1)
+    # print(f"[Rank {rank}] Communicating LEFT", flush=True)
     sendbuf_left = np.ascontiguousarray(f_np[:, 1, :])
-    recvbuf_right = np.empty_like(sendbuf_left) # Buffer for data from right
-    comm_cart.Sendrecv(sendbuf=sendbuf_left, dest=left_dst, sendtag=1,
+    recvbuf_left = np.ascontiguousarray(f_np[:, -1, :])
+    comm_cart.Sendrecv(sendbuf=sendbuf_left, dest=left_dst, sendtag=0,
+                       recvbuf=recvbuf_left, source=left_src, recvtag=0)
+    f_np[:, -1, :] = recvbuf_left  
+    
+    # print(f"[Rank {rank}] Communicating RIGHT", flush=True)
+    sendbuf_right = np.ascontiguousarray(f_np[:, -2, :])
+    recvbuf_right = np.ascontiguousarray(f_np[:, 0, :])
+    comm_cart.Sendrecv(sendbuf=sendbuf_right, dest=right_dst, sendtag=1,
                        recvbuf=recvbuf_right, source=right_src, recvtag=1)
-    # Only update the halo if the neighbor exists
-    if right_src != MPI.PROC_NULL:
-        f_np[:, -1, :] = recvbuf_right
-
-    # Communication for TOP and BOTTOM (if py > 1) remains the same
+    f_np[:, 0, :] = recvbuf_right  
+    
+    # print(f"[Rank {rank}] Communicating BOTTOM", flush=True)
     if py > 1:
-        # This part of your logic was likely correct, but follows the same pattern
-        # ... top/bottom exchange logic here ...
-        pass
+        sendbuf_bottom = np.ascontiguousarray(f_np[:, :, 1])
+        recvbuf_bottom = np.ascontiguousarray(f_np[:, :, -1])
+        comm_cart.Sendrecv(sendbuf=sendbuf_bottom, dest=bottom_dst, sendtag=2,
+                       recvbuf=recvbuf_bottom, source=bottom_src, recvtag=2)
+        f_np[:, :, -1] = recvbuf_bottom  
+    
+        # print(f"[Rank {rank}] Communicating TOP", flush=True)
+        sendbuf_top = np.ascontiguousarray(f_np[:, :, -2])
+        recvbuf_top = np.ascontiguousarray(f_np[:, :, 0])
+        comm_cart.Sendrecv(sendbuf=sendbuf_top, dest=top_dst, sendtag=3,
+                       recvbuf=recvbuf_top, source=top_src, recvtag=3)
+        f_np[:, :, 0] = recvbuf_top  
 
     return jnp.array(f_np)
-
-
-
 
 local_devices = jax.local_devices()
 print(f"Process {jax.process_index()} local devices:", local_devices)
