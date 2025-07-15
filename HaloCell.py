@@ -42,8 +42,8 @@ print(f"JAX backend: {jax.default_backend()}")
 
 # ✅ Simulation parameters
 NX, NY = 300, 300
-NSTEPS = 3000
-omega = 1.7
+NSTEPS = 5000
+omega = 1.6
 u_max = 0.1
 nu = (1 / omega - 0.5) / 3
 
@@ -59,13 +59,13 @@ nu = (1 / omega - 0.5) / 3
 
 
 #Try 1 Dimension mesh decomposition
-px = 1  # Decompose only in X direction
-py = size     # No decomposition in Y
+px = size  # Decompose only in X direction
+py = 1     # No decomposition in Y
 
 assert NX % px == 0, f"NX not divisible by number of processes: NX={NX}, px={px}"
 
-local_NX = NX 
-local_NY = NY //py
+local_NX = NX //px
+local_NY = NY 
 
 # New local shape with halos
 local_NX_halo = local_NX + 2
@@ -156,22 +156,23 @@ def apply_top_lid_velocity(f, is_top, u_lid=jnp.array([-u_max, 0.0])):
     return jax.lax.cond(is_top, do_lid_velocity, lambda f: f, f)
 
 
-# ix = jax.process_index()
-# iy = 0
+ix = jax.process_index()
+iy = 0
 
-# x_start = ix * local_NX
-# y_start = 0
-# x_end = x_start + local_NX
-# y_end = NY
+x_start = ix * local_NX
+y_start = 0
+x_end = x_start + local_NX
+y_end = NY
 
-#split in Y axis
-ix = 0
-iy = jax.process_index()
+# ix = 0
+# iy = jax.process_index()
 
-x_start = 0
-y_start = iy * local_NY
-x_end = NX
-y_end = y_start + local_NY
+# x_start = 0
+# y_start = iy * local_NY
+# x_end = NX
+# y_end = y_start + local_NY
+
+
 
 print(f"Using 2D mesh shape: ({px}, {py})")
 print(f"Global domain: {NX}x{NY}, Steps: {NSTEPS}")
@@ -208,9 +209,9 @@ f0 = f0.at[:, 0, -1].set(f0[:, 1, -2])
 f0 = f0.at[:, -1, 0].set(f0[:, -2, 1])
 f0 = f0.at[:, -1, -1].set(f0[:, -2, -2])
 
-# ndx, ndy = px, py  # process grid dims
+ndx, ndy = px, py  # process grid dims
 
-comm_cart = comm.Create_cart((px, py), periods=(False, False))
+comm_cart = comm.Create_cart((ndx, ndy), periods=(False, False))
 coords = comm_cart.Get_coords(rank)
 
 left_src, left_dst = comm_cart.Shift(direction=0, disp=-1)
@@ -219,7 +220,6 @@ bottom_src, bottom_dst = comm_cart.Shift(direction=1, disp=-1)
 top_src, top_dst = comm_cart.Shift(direction=1, disp=1)
 
 print(f"Rank {rank} neighbors: left_src={left_src}, right_src={right_src}")
-print(f"Rank {rank} neighbors: bottom_src={bottom_src}, top_src={top_src}")
 
 is_left_edge = coords[0] == 0
 is_right_edge = coords[0] == px - 1
@@ -233,24 +233,23 @@ is_top_edge = jnp.array(is_top_edge, dtype=bool)
 
 
 def communicate(f_ikl, comm_cart, left_src, left_dst, right_src, right_dst,
-                bottom_src, bottom_dst, top_src, top_dst,px,py):
+                bottom_src, bottom_dst, top_src, top_dst,py):
     # print(f"[Rank {rank}] Starting communicate()", flush=True, file=sys.stderr)
     f_np = np.array(f_ikl)  # Ensure mutable array for MPI
 
-    if px > 1:
     # print(f"[Rank {rank}] Communicating LEFT", flush=True)
-        sendbuf_left = np.ascontiguousarray(f_np[:, 1, :])
-        recvbuf_left = np.ascontiguousarray(f_np[:, -1, :])
-        comm_cart.Sendrecv(sendbuf=sendbuf_left, dest=left_dst, sendtag=0,
+    sendbuf_left = np.ascontiguousarray(f_np[:, 1, :])
+    recvbuf_left = np.ascontiguousarray(f_np[:, -1, :])
+    comm_cart.Sendrecv(sendbuf=sendbuf_left, dest=left_dst, sendtag=0,
                        recvbuf=recvbuf_left, source=left_src, recvtag=0)
-        f_np[:, -1, :] = recvbuf_left  
+    f_np[:, -1, :] = recvbuf_left  
     
     # print(f"[Rank {rank}] Communicating RIGHT", flush=True)
-        sendbuf_right = np.ascontiguousarray(f_np[:, -2, :])
-        recvbuf_right = np.ascontiguousarray(f_np[:, 0, :])
-        comm_cart.Sendrecv(sendbuf=sendbuf_right, dest=right_dst, sendtag=1,
+    sendbuf_right = np.ascontiguousarray(f_np[:, -2, :])
+    recvbuf_right = np.ascontiguousarray(f_np[:, 0, :])
+    comm_cart.Sendrecv(sendbuf=sendbuf_right, dest=right_dst, sendtag=1,
                        recvbuf=recvbuf_right, source=right_src, recvtag=1)
-        f_np[:, 0, :] = recvbuf_right  
+    f_np[:, 0, :] = recvbuf_right  
     
     # print(f"[Rank {rank}] Communicating BOTTOM", flush=True)
     if py > 1:
@@ -275,7 +274,7 @@ print(f"Process {jax.process_index()} local devices:", local_devices)
 local_mesh_shape = (len(local_devices),)  # 1D mesh for simplicity
 local_device_mesh = mesh_utils.create_device_mesh(local_mesh_shape, devices=local_devices)
 
-mesh = Mesh(local_device_mesh, axis_names=('y',))  # Use axis_names matching mesh dims
+mesh = Mesh(local_device_mesh, axis_names=('x',))  # Use axis_names matching mesh dims
 
 #  Device mesh setup (same as before)
 # mesh = Mesh(mesh_utils.create_device_mesh((px, py)), axis_names=('x', 'y'))
@@ -283,7 +282,7 @@ mesh = Mesh(local_device_mesh, axis_names=('y',))  # Use axis_names matching mes
 
 with mesh:
     # sharding = NamedSharding(mesh, P(None, 'x', 'y'))
-    sharding = NamedSharding(mesh, P(None,'y'))  
+    sharding = NamedSharding(mesh, P(None,'x'))  
 
     f = jax.device_put(f0, sharding)
 
@@ -296,8 +295,8 @@ with mesh:
 
     lbm_collide_stream = pjit(
         lbm_collide_stream,
-        in_shardings=(P(None, 'y'), P(), P(), P(), P()),
-        out_shardings=P(None, 'y'),
+        in_shardings=(P(None, 'x'), P(), P(), P(), P()),
+        out_shardings=P(None, 'x'),
     )
 
     print("Sharding info:", f.sharding)
@@ -318,7 +317,7 @@ with mesh:
                     f_cpu, comm_cart,
                     left_src, left_dst, right_src, right_dst,
                     bottom_src, bottom_dst, top_src, top_dst,
-                    px, py
+                    py
             )
             if not is_left_edge:
                 # print(f"[Rank {rank}] Sent to left: {f_cpu[:,1,:]}")
@@ -332,19 +331,6 @@ with mesh:
                 # print(f"[Rank {rank}] Received right halo: {f_cpu[:,-1,:]}")
                 diff_right = jnp.abs(f_cpu[:,-2,:] - f_cpu[:,-1,:])  # inner vs received halo
                 print(f"[STEP:{step}] [Rank {rank}] Max right halo mismatch: {diff_right.max()}")
-            # For top boundary
-            if not is_top_edge:
-                # print(f"[Rank {rank}] Sent to top: {f_cpu[1,:,:]}")
-                # print(f"[Rank {rank}] Received top halo: {f_cpu[0,:,:]}")
-                diff_top = jnp.abs(f_cpu[1,:,:] - f_cpu[0,:,:])  # inner vs received halo
-                print(f"[STEP:{step}] [Rank {rank}] Max top halo mismatch: {diff_top.max()}")
-            # For bottom boundary
-            if not is_bottom_edge:
-                # print(f"[Rank {rank}] Sent to bottom: {f_cpu[-2,:,:]}")
-                # print(f"[Rank {rank}] Received bottom halo: {f_cpu[-1,:,:]}")
-                diff_bottom = jnp.abs(f_cpu[-2,:,:] - f_cpu[-1,:,:])  # inner vs received halo
-                print(f"[STEP:{step}] [Rank {rank}] Max bottom halo mismatch: {diff_bottom.max()}")
-
         comm_cart.barrier() 
         f = jax.device_put(f_cpu, f.sharding)  
 
@@ -369,8 +355,8 @@ with mesh:
                         assert shard.shape[0] == 2, f"Unexpected shard shape: {shard.shape}"
                         normalized_shards.append(shard)
 
-                    # Concatenate along sharded axis (X==1, Y ==2)
-                    u_combined = np.concatenate(normalized_shards, axis=2)
+                    # Concatenate along sharded axis (X)
+                    u_combined = np.concatenate(normalized_shards, axis=1)
 
                
                     print(f"Reconstructed shape: {u_combined.shape}")
@@ -402,7 +388,7 @@ with mesh:
                 fig, ax = plt.subplots(figsize=(7, 6))
 
                 # Streamplot
-                ax.streamplot(X, Y, u_x, u_y, density=1.2, linewidth=1, arrowsize=1.5)
+                ax.streamplot(X, Y, u_x.T, u_y.T, density=1.2, linewidth=1, arrowsize=1.5)
 
                 # Labels and aesthetics
                 ax.set_xlim(xlim)
