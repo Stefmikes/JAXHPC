@@ -209,7 +209,7 @@ f0 = f0.at[:, -1, -1].set(f0[:, -2, -2])
 
 ndx, ndy = px, py  # process grid dims
 
-comm_cart = comm.Create_cart((ndx, ndy), periods=(False, False))
+comm_cart = comm.Create_cart((ndx, ndy), periods=(True, True))
 coords = comm_cart.Get_coords(rank)
 
 left_src, left_dst = comm_cart.Shift(direction=0, disp=-1)
