@@ -1,7 +1,6 @@
 import time
 import math
 import os
-import sys
 import socket
 import jax
 import jax.numpy as jnp
@@ -42,21 +41,10 @@ print(f"JAX backend: {jax.default_backend()}")
 
 # ✅ Simulation parameters
 NX, NY = 300, 300
-NSTEPS = 5000
-omega = 1.7
+NSTEPS = 10000
+omega = 1.6
 u_max = 0.1
 nu = (1 / omega - 0.5) / 3
-
-# 🔄 Local domain decomposition based on process grid
-# num_devices = jax.process_count()
-# px = int(math.floor(math.sqrt(num_devices)))
-# while num_devices % px != 0:
-#     px -= 1
-# py = num_devices // px
-
-# Ensure domain is divisible by px and py
-# assert NX % px == 0 and NY % py == 0, f"NX/NY not divisible by px/py: {NX},{NY} / {px},{py}"
-
 
 #Try 1 Dimension mesh decomposition
 px = size  # Decompose only in X direction
@@ -69,7 +57,11 @@ local_NY = NY
 
 # New local shape with halos
 local_NX_halo = local_NX + 2
-local_NY_halo = local_NY + 2
+local_NY_halo = local_NY
+# Interior domain:         f[:, 1:-1, :]
+# Halos:
+#   Left:   f[:, 0, :]
+#   Right:  f[:, -1, :]
 
 print(f"Rank {rank}: jax.process_count() = {jax.process_count()}")
 print(f"Rank {rank}: MPI size = {size}")
@@ -106,54 +98,55 @@ def stream(f):
 
 
 opposite = jnp.array([0, 3, 4, 1, 2, 7, 8, 5, 6])
-
 def bounce_from_left(f):
-    return f.at[:, 1:-1, 1].set(f[opposite, 1:-1, 1])
+    return f.at[:, 0, 1:-1].set(f[opposite, 0, 1:-1])
+
 def bounce_from_right(f):
-    return f.at[:, 1:-1, -2].set(f[opposite, 1:-1, -2])
+    return f.at[:, -1, 1:-1].set(f[opposite, -1, 1:-1])
+
 def bounce_from_bottom(f):
-    return f.at[:, 1, 1:-1].set(f[opposite, 1, 1:-1])
+    return f.at[:, 1:-1, 0].set(f[opposite,  1:-1, 0])
+
 def corner_top_left(f):
-    return f.at[:, 1, -2].set(f[opposite, 1, -2])
+    return f.at[:, 0, -1].set(f[opposite, 0, -1])
+
 def corner_top_right(f):
-    return f.at[:, -2, -2].set(f[opposite, -2, -2])
+    return f.at[:, -1, -1].set(f[opposite, -1, -1])
+
 def corner_bottom_left(f):
-    return f.at[:, 1, 1].set(f[opposite, 1, 1])
+    return f.at[:, 0, 0].set(f[opposite, 0, 0])
+
 def corner_bottom_right(f):
-    return f.at[:, -2, 1].set(f[opposite, -2, 1])
+    return f.at[:, -1, 0].set(f[opposite, -1, 0])
 
 @jax.jit
-def apply_bounce_back(f, is_left, is_right, is_bottom):
+def apply_bounce_back(f, is_left, is_right):
     f = jax.lax.cond(is_left, lambda f: bounce_from_left(f), lambda f: f, f)
     f = jax.lax.cond(is_right, lambda f: bounce_from_right(f), lambda f: f, f)
-    f = jax.lax.cond(is_bottom, lambda f: bounce_from_bottom(f), lambda f: f, f)
-   
-    #Only apply corners if at corresponding edges, to avoid out-of-bound errors
-    f = jax.lax.cond(is_left & is_top_edge, corner_top_left, lambda f: f, f)
-    f = jax.lax.cond(is_right & is_top_edge, corner_top_right, lambda f: f, f)
-    f = jax.lax.cond(is_left & is_bottom, corner_bottom_left, lambda f: f, f)
-    f = jax.lax.cond(is_right & is_bottom, corner_bottom_right, lambda f: f, f)
+
+    f = bounce_from_bottom(f)  
+    f = corner_bottom_left(f)
+    f = corner_bottom_right(f)
+    f = corner_top_left(f)
+    f = corner_top_right(f)
     return f
-@jax.jit
-def apply_top_lid_velocity(f, is_top, u_lid=jnp.array([-u_max, 0.0])):
-    def do_lid_velocity(f):
-        rho_wall = (f[0, 1:-1, -2] + f[1, 1:-1, -2] + f[3, 1:-1, -2] +
-                    2 * (f[4, 1:-1, -2] + f[7, 1:-1, -2] + f[8, 1:-1, -2]))
 
-        incoming = jnp.array([2, 5, 6])
-
-        def body(i, f):
-            i_ = incoming[i]
-            i_opp = opposite[i_]
-            ci_dot_u = c[0, i_] * u_lid[0] + c[1, i_] * u_lid[1]
-            correction = 6.0 * w[i_] * rho_wall * ci_dot_u
-            f = f.at[i_, 1:-1, -2].set(f[i_opp, 1:-1, -2] - correction)
-            return f
-
-        f = jax.lax.fori_loop(0, len(incoming), body, f)
+def apply_top_lid_velocity(f, u_lid=jnp.array([-u_max, 0.0])):
+    # f shape: (9, Nx_interior, Ny), where Nx_interior = Nx - 2 (no halos)
+    rho_wall = (f[0, :, -1] + f[1, :, -1] + f[3, :, -1] +
+                2 * (f[4, :, -1] + f[7, :, -1] + f[8, :, -1]))
+    incoming = jnp.array([2, 5, 6])
+    
+    def body(i, f):
+        i_ = incoming[i]
+        i_opp = opposite[i_]
+        ci_dot_u = c[0, i_] * u_lid[0] + c[1, i_] * u_lid[1]
+        correction = 6.0 * w[i_] * rho_wall * ci_dot_u
+        f = f.at[i_, :, -1].set(f[i_opp, :, -1] - correction)
         return f
-
-    return jax.lax.cond(is_top, do_lid_velocity, lambda f: f, f)
+    
+    f = jax.lax.fori_loop(0, len(incoming), body, f)
+    return f
 
 
 ix = jax.process_index()
@@ -164,14 +157,6 @@ y_start = 0
 x_end = x_start + local_NX
 y_end = NY
 
-# ix = 0
-# iy = jax.process_index()
-
-# x_start = 0
-# y_start = iy * local_NY
-# x_end = NX
-# y_end = y_start + local_NY
-
 print(f"Using 2D mesh shape: ({px}, {py})")
 print(f"Global domain: {NX}x{NY}, Steps: {NSTEPS}")
 print(f"Process {rank} handles local domain x:[{x_start}, {x_end}) y:[{y_start}, {y_end})")
@@ -180,36 +165,25 @@ print(f"Process {rank} handles local domain x:[{x_start}, {x_end}) y:[{y_start},
 x = jnp.arange(x_start, x_end) + 0.5
 y = jnp.arange(y_start, y_end) + 0.5
 X, Y = jnp.meshgrid(x, y, indexing='ij')
-
-
 u0 = jnp.zeros((local_NX, local_NY), dtype)
-#DEBUG
-# print(f"Rank {rank}: local u0 shape: {u0.shape}")
-
 rho0 = jnp.ones((local_NX, local_NY), dtype=dtype)
 v0 = jnp.zeros_like(u0)
 u_init = jnp.array([u0, v0]) 
 f0 = equilibrium(rho0, u_init).astype(dtype)
 # Start with interior equilibrium distribution
 f0_inner = equilibrium(rho0, u_init).astype(dtype)
-f0 = jnp.zeros((9, local_NX_halo, local_NY_halo), dtype=dtype)
-f0 = f0.at[:, 1:-1, 1:-1].set(f0_inner)
+f0 = jnp.zeros((9, local_NX + 2, local_NY), dtype=dtype)
+f0 = f0.at[:, 1:-1, :].set(f0_inner)
 
 # Initialize halos as copies of adjacent interior cells (simple zero-gradient BC for initialization)
-f0 = f0.at[:, 0, 1:-1].set(f0[:, 1, 1:-1])       # left halo
-f0 = f0.at[:, -1, 1:-1].set(f0[:, -2, 1:-1])     # right halo
-f0 = f0.at[:, 1:-1, 0].set(f0[:, 1:-1, 1])       # bottom halo
-f0 = f0.at[:, 1:-1, -1].set(f0[:, 1:-1, -2])     # top halo
-
-# Corners (optional)
-f0 = f0.at[:, 0, 0].set(f0[:, 1, 1])
-f0 = f0.at[:, 0, -1].set(f0[:, 1, -2])
-f0 = f0.at[:, -1, 0].set(f0[:, -2, 1])
-f0 = f0.at[:, -1, -1].set(f0[:, -2, -2])
+# f0 = f0.at[:, 0, :].set(f0[:, 1, :])       # left halo
+# f0 = f0.at[:, -1, :].set(f0[:, -2, :])     # right halo
+# f0 = f0.at[:, 1:-1, 0].set(f0[:, 1:-1, 1])       # bottom halo
+# f0 = f0.at[:, 1:-1, -1].set(f0[:, 1:-1, -2])     # top halo
 
 ndx, ndy = px, py  # process grid dims
 
-comm_cart = comm.Create_cart((ndx, ndy), periods=(True, True))
+comm_cart = comm.Create_cart((ndx, ndy), periods=(False, False))
 coords = comm_cart.Get_coords(rank)
 
 left_src, left_dst = comm_cart.Shift(direction=0, disp=-1)
@@ -235,19 +209,22 @@ def communicate(f_ikl, comm_cart, left_src, left_dst, right_src, right_dst,
     # print(f"[Rank {rank}] Starting communicate()", flush=True, file=sys.stderr)
     f_np = np.array(f_ikl)  # Ensure mutable array for MPI
 
-    # print(f"[Rank {rank}] Communicating LEFT", flush=True)
-    sendbuf_left = np.ascontiguousarray(f_np[:, 1, :])
-    recvbuf_left = np.ascontiguousarray(f_np[:, -1, :])
-    comm_cart.Sendrecv(sendbuf=sendbuf_left, dest=left_dst, sendtag=0,
-                       recvbuf=recvbuf_left, source=left_src, recvtag=0)
-    f_np[:, -1, :] = recvbuf_left  
     
-    # print(f"[Rank {rank}] Communicating RIGHT", flush=True)
-    sendbuf_right = np.ascontiguousarray(f_np[:, -2, :])
-    recvbuf_right = np.ascontiguousarray(f_np[:, 0, :])
-    comm_cart.Sendrecv(sendbuf=sendbuf_right, dest=right_dst, sendtag=1,
+    if  left_dst != MPI.PROC_NULL:
+        print(f"[Rank {rank}] Communicating LEFT", flush=True)
+        sendbuf_left = np.ascontiguousarray(f_np[:, 1, :])
+        recvbuf_left = np.ascontiguousarray(f_np[:, -1, :])
+        comm_cart.Sendrecv(sendbuf=sendbuf_left, dest=left_dst, sendtag=0,
+                       recvbuf=recvbuf_left, source=left_src, recvtag=0)
+        f_np[:, -1, :] = recvbuf_left  
+    
+    if right_dst != MPI.PROC_NULL:
+        print(f"[Rank {rank}] Communicating RIGHT", flush=True)
+        sendbuf_right = np.ascontiguousarray(f_np[:, -2, :])
+        recvbuf_right = np.ascontiguousarray(f_np[:, 0, :])
+        comm_cart.Sendrecv(sendbuf=sendbuf_right, dest=right_dst, sendtag=1,
                        recvbuf=recvbuf_right, source=right_src, recvtag=1)
-    f_np[:, 0, :] = recvbuf_right  
+        f_np[:, 0, :] = recvbuf_right  
     
     # print(f"[Rank {rank}] Communicating BOTTOM", flush=True)
     # if py > 1:
@@ -274,26 +251,25 @@ local_device_mesh = mesh_utils.create_device_mesh(local_mesh_shape, devices=loca
 
 mesh = Mesh(local_device_mesh, axis_names=('x',))  # Use axis_names matching mesh dims
 
-#  Device mesh setup (same as before)
-# mesh = Mesh(mesh_utils.create_device_mesh((px, py)), axis_names=('x', 'y'))
-
 
 with mesh:
     # sharding = NamedSharding(mesh, P(None, 'x', 'y'))
     sharding = NamedSharding(mesh, P(None,'x', None))  
-
     f = jax.device_put(f0, sharding)
 
-    def lbm_collide_stream(f, is_left, is_right, is_bottom, is_top):
-        f, _ = collide(f)
-        f = stream(f)
-        f = apply_bounce_back(f, is_left, is_right, is_bottom)
-        f = apply_top_lid_velocity(f, is_top)
+    def lbm_collide_stream(f, is_left, is_right):
+        f_interior = f[:, 1:-1, :]  # all y, interior x
+        
+        f_interior, _ = collide(f_interior)
+        f_interior = stream(f_interior)
+        f_interior = apply_bounce_back(f_interior, is_left, is_right)
+        f_interior = apply_top_lid_velocity(f_interior)
+        f = f.at[:, 1:-1, :].set(f_interior) 
         return f
 
     lbm_collide_stream = pjit(
         lbm_collide_stream,
-        in_shardings=(P(None, 'x', None), P(), P(), P(), P()),
+        in_shardings=(P(None, 'x', None), P(), P()),
         out_shardings=P(None, 'x', None),
     )
 
@@ -307,7 +283,8 @@ with mesh:
 
     for step in range(NSTEPS):
         f.block_until_ready()  # Ensure f is ready before proceeding
-        f_cpu = f.addressable_data(0)  # Get CPU array for MPI communication            
+        f_cpu = f.addressable_data(0)  # Get CPU array for MPI communication     
+          
         comm_cart.barrier()     
         if size > 1 and (not is_left_edge or not is_right_edge):
             f_cpu = communicate(
@@ -328,11 +305,11 @@ with mesh:
         comm_cart.barrier() 
         f = jax.device_put(f_cpu, f.sharding)  
 
-        f = lbm_collide_stream(f, is_left_edge, is_right_edge, is_bottom_edge, is_top_edge)
+        f = lbm_collide_stream(f, is_left_edge, is_right_edge)
       
         if step % 100 == 0:
-            rho = jnp.einsum('ijk->jk', f[:, 1:-1, 1:-1])
-            u = jnp.einsum('ai,ixy->axy', c, f[:, 1:-1, 1:-1]) / rho
+            rho = jnp.einsum('ijk->jk', f[:, 1:-1, :])
+            u = jnp.einsum('ai,ixy->axy', c, f[:, 1:-1, :]) / rho
             u_gathered = multihost_utils.process_allgather(u)
             u_np = np.array(u_gathered)
             all_shards = comm.gather(u_np, root=0)
