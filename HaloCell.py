@@ -207,21 +207,21 @@ def communicate(f_ikl, comm_cart, left_src, left_dst, right_src, right_dst, py):
     f_np = np.array(f_ikl)  # Ensure mutable array for MPI
 
     
-    if  left_dst != MPI.PROC_NULL:
-        print(f"[Rank {rank}] Communicating LEFT", flush=True)
-        sendbuf_left = np.ascontiguousarray(f_np[:, 1, :])
-        recvbuf_left = np.ascontiguousarray(f_np[:, 0, :])
-        comm_cart.Sendrecv(sendbuf=sendbuf_left, dest=left_dst, sendtag=0,
+   
+    print(f"[Rank {rank}] Communicating LEFT", flush=True)
+    sendbuf_left = np.ascontiguousarray(f_np[:, 1, :])
+    recvbuf_left = np.ascontiguousarray(f_np[:, -1, :])
+    comm_cart.Sendrecv(sendbuf=sendbuf_left, dest=left_dst, sendtag=0,
                        recvbuf=recvbuf_left, source=left_src, recvtag=0)
-        f_np[:, 0, :] = recvbuf_left  
+    f_np[:, -1, :] = recvbuf_left  
     
-    if right_dst != MPI.PROC_NULL:
-        print(f"[Rank {rank}] Communicating RIGHT", flush=True)
-        sendbuf_right = np.ascontiguousarray(f_np[:, -2, :])
-        recvbuf_right = np.ascontiguousarray(f_np[:, -1, :])
-        comm_cart.Sendrecv(sendbuf=sendbuf_right, dest=right_dst, sendtag=0,
-                       recvbuf=recvbuf_right, source=right_src, recvtag=0)
-        f_np[:, -1, :] = recvbuf_right  
+    
+    print(f"[Rank {rank}] Communicating RIGHT", flush=True)
+    sendbuf_right = np.ascontiguousarray(f_np[:, -2, :])
+    recvbuf_right = np.ascontiguousarray(f_np[:, -0, :])
+    comm_cart.Sendrecv(sendbuf=sendbuf_right, dest=right_dst, sendtag=1,
+                       recvbuf=recvbuf_right, source=right_src, recvtag=1)
+    f_np[:, 0, :] = recvbuf_right  
     
     # print(f"[Rank {rank}] Communicating BOTTOM", flush=True)
     # if py > 1:
