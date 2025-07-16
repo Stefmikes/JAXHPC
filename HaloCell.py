@@ -41,7 +41,7 @@ print(f"JAX backend: {jax.default_backend()}")
 
 # ✅ Simulation parameters
 NX, NY = 300, 300
-NSTEPS = 5000
+NSTEPS = 2000
 omega = 1.6
 u_max = 0.1
 nu = (1 / omega - 0.5) / 3
@@ -314,24 +314,25 @@ with mesh:
             u = jnp.einsum('ai,ixy->axy', c, f[:, 1:-1, :]) / rho
             u_gathered = multihost_utils.process_allgather(u)
             u_np = np.array(u_gathered)
-            all_shards = comm.gather(u_np, root=0)
+            ranked_shard = (rank, u_np)
+            all_ranked_shards = comm.gather(ranked_shard, root=0)
 
             if rank == 0:
 
                 try:
                     
-                    # Normalize shard shapes
-                    normalized_shards = []
-                    for shard in all_shards:
+                    all_ranked_shards.sort(key=lambda x: x[0])  # sort by rank
+                    sorted_shards = []
+
+                    for rank_id, shard in all_ranked_shards:
                         while shard.ndim > 3:
                             shard = shard[0]  # strip excess batch dim
-                        assert shard.shape[0] == 2, f"Unexpected shard shape: {shard.shape}"
-                        normalized_shards.append(shard)
+                        assert shard.shape[0] == 2, f"[Rank {rank_id}] Unexpected shard shape: {shard.shape}"
+                        sorted_shards.append(shard)
 
-                    # Concatenate along sharded axis (X)
-                    u_combined = np.concatenate(normalized_shards, axis=1)
+                    # Concatenate along X (axis=1)
+                    u_combined = np.concatenate(sorted_shards, axis=1)
 
-               
                     print(f"Reconstructed shape: {u_combined.shape}")
                     assert u_combined.shape == (2, NX, NY), \
                         f"u_combined.shape = {u_combined.shape}, expected (2, {NX}, {NY})"
