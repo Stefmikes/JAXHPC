@@ -312,8 +312,7 @@ with mesh:
         if step % 100 == 0:
             rho = jnp.einsum('ijk->jk', f[:, 1:-1, :])
             u = jnp.einsum('ai,ixy->axy', c, f[:, 1:-1, :]) / rho
-            u_gathered = multihost_utils.process_allgather(u)
-            u_np = np.array(u_gathered)
+            u_np = np.array(u)
             ranked_shard = (rank, u_np)
             all_ranked_shards = comm.gather(ranked_shard, root=0)
 
