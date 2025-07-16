@@ -250,20 +250,26 @@ with mesh:
     sharding = NamedSharding(mesh, P(None,'x', None))  
     f = jax.device_put(f0, sharding)
 
-    def lbm_collide_stream(f, is_left, is_right):
+    def lbm_collide_no_stream(f, is_left, is_right):
         f_interior = f[:, 1:-1, :]  # all y, interior x
         f_interior, _ = collide(f_interior)
-        f = f.at[:, 1:-1, :].set(f_interior) 
-        f = stream(f)
-        f_interior = f[:, 1:-1, :]  # all y, interior x
         f_interior = apply_bounce_back(f_interior, is_left, is_right)
         f_interior = apply_top_lid_velocity(f_interior)
-        f = f.at[:, 1:-1, :].set(f_interior) 
+        f = f.at[:, 1:-1, :].set(f_interior)
         return f
+    
+    def lbm_stream(f):
+        return stream(f)
 
-    lbm_collide_stream = pjit(
-        lbm_collide_stream,
+    lbm_collide_no_stream = pjit(
+        lbm_collide_no_stream,
         in_shardings=(P(None, 'x', None), P(), P()),
+        out_shardings=P(None, 'x', None),
+    )
+
+    lbm_stream = pjit(
+        lbm_stream,
+        in_shardings=P(None, 'x', None),
         out_shardings=P(None, 'x', None),
     )
 
@@ -276,6 +282,7 @@ with mesh:
     start = time.time()
 
     for step in range(NSTEPS):
+
         f.block_until_ready()  # Ensure f is ready before proceeding
         f_cpu = f.addressable_data(0)  # Get CPU array for MPI communication     
           
@@ -298,7 +305,9 @@ with mesh:
         comm_cart.barrier() 
         f = jax.device_put(f_cpu, f.sharding)  
 
-        f = lbm_collide_stream(f, is_left_edge, is_right_edge)
+        f = lbm_stream(f)
+
+        f = lbm_collide_no_stream(f, is_left_edge, is_right_edge)
       
         if step % 100 == 0:
             rho = jnp.einsum('ijk->jk', f[:, 1:-1, :])
