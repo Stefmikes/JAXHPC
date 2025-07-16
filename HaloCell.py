@@ -41,7 +41,7 @@ print(f"JAX backend: {jax.default_backend()}")
 
 # ✅ Simulation parameters
 NX, NY = 300, 300
-NSTEPS = 10000
+NSTEPS = 5000
 omega = 1.6
 u_max = 0.1
 nu = (1 / omega - 0.5) / 3
@@ -205,10 +205,7 @@ is_top_edge = jnp.array(is_top_edge, dtype=bool)
 def communicate(f_ikl, comm_cart, left_src, left_dst, right_src, right_dst, py):
     # print(f"[Rank {rank}] Starting communicate()", flush=True, file=sys.stderr)
     f_np = np.array(f_ikl)  # Ensure mutable array for MPI
-
-    
    
-    print(f"[Rank {rank}] Communicating LEFT", flush=True)
     sendbuf_left = np.ascontiguousarray(f_np[:, 1, :])
     recvbuf_left = np.ascontiguousarray(f_np[:, -1, :])
     comm_cart.Sendrecv(sendbuf=sendbuf_left, dest=left_dst, sendtag=0,
@@ -216,9 +213,8 @@ def communicate(f_ikl, comm_cart, left_src, left_dst, right_src, right_dst, py):
     f_np[:, -1, :] = recvbuf_left  
     
     
-    print(f"[Rank {rank}] Communicating RIGHT", flush=True)
     sendbuf_right = np.ascontiguousarray(f_np[:, -2, :])
-    recvbuf_right = np.ascontiguousarray(f_np[:, -0, :])
+    recvbuf_right = np.ascontiguousarray(f_np[:, 0, :])
     comm_cart.Sendrecv(sendbuf=sendbuf_right, dest=right_dst, sendtag=1,
                        recvbuf=recvbuf_right, source=right_src, recvtag=1)
     f_np[:, 0, :] = recvbuf_right  
@@ -256,9 +252,10 @@ with mesh:
 
     def lbm_collide_stream(f, is_left, is_right):
         f_interior = f[:, 1:-1, :]  # all y, interior x
-        
         f_interior, _ = collide(f_interior)
-        f_interior = stream(f_interior)
+        f = f.at[:, 1:-1, :].set(f_interior) 
+        f = stream(f)
+        f_interior = f[:, 1:-1, :]  # all y, interior x
         f_interior = apply_bounce_back(f_interior, is_left, is_right)
         f_interior = apply_top_lid_velocity(f_interior)
         f = f.at[:, 1:-1, :].set(f_interior) 
