@@ -41,8 +41,8 @@ print(f"JAX backend: {jax.default_backend()}")
 
 # ✅ Simulation parameters
 NX, NY = 300, 300
-NSTEPS = 2000
-omega = 1.6
+NSTEPS = 30000
+omega = 1.7
 u_max = 0.1
 nu = (1 / omega - 0.5) / 3
 
@@ -131,11 +131,28 @@ def apply_bounce_back(f, is_left, is_right):
     f = corner_top_right(f)
     return f
 
+# def apply_top_lid_velocity(f, u_lid=jnp.array([-u_max, 0.0])):
+#     # f shape: (9, Nx_interior, Ny), where Nx_interior = Nx - 2 (no halos)
+#     rho_wall = (f[0, :, -1] + f[1, :, -1] + f[3, :, -1] +
+#                 2 * (f[4, :, -1] + f[7, :, -1] + f[8, :, -1]))
+#     incoming = jnp.array([2, 5, 6])
+    
+#     def body(i, f):
+#         i_ = incoming[i]
+#         i_opp = opposite[i_]
+#         ci_dot_u = c[0, i_] * u_lid[0] + c[1, i_] * u_lid[1]
+#         correction = 6.0 * w[i_] * rho_wall * ci_dot_u
+#         f = f.at[i_, :, -1].set(f[i_opp, :, -1] - correction)
+#         return f
+    
+#     f = jax.lax.fori_loop(0, len(incoming), body, f)
+#     return f
+
 def apply_top_lid_velocity(f, u_lid=jnp.array([-u_max, 0.0])):
-    # f shape: (9, Nx_interior, Ny), where Nx_interior = Nx - 2 (no halos)
     rho_wall = (f[0, :, -1] + f[1, :, -1] + f[3, :, -1] +
-                2 * (f[4, :, -1] + f[7, :, -1] + f[8, :, -1]))
-    incoming = jnp.array([2, 5, 6])
+                2 * (f[2, :, -1] + f[5, :, -1] + f[6, :, -1]))
+    
+    incoming = jnp.array([4, 7, 8])  # south, SW, SE
     
     def body(i, f):
         i_ = incoming[i]
@@ -144,9 +161,10 @@ def apply_top_lid_velocity(f, u_lid=jnp.array([-u_max, 0.0])):
         correction = 6.0 * w[i_] * rho_wall * ci_dot_u
         f = f.at[i_, :, -1].set(f[i_opp, :, -1] - correction)
         return f
-    
+
     f = jax.lax.fori_loop(0, len(incoming), body, f)
     return f
+
 
 
 ix = jax.process_index()
@@ -219,21 +237,6 @@ def communicate(f_ikl, comm_cart, left_src, left_dst, right_src, right_dst, py):
                        recvbuf=recvbuf_right, source=right_src, recvtag=1)
     f_np[:, 0, :] = recvbuf_right  
     
-    # print(f"[Rank {rank}] Communicating BOTTOM", flush=True)
-    # if py > 1:
-    #     sendbuf_bottom = np.ascontiguousarray(f_np[:, :, 1])
-    #     recvbuf_bottom = np.ascontiguousarray(f_np[:, :, -1])
-    #     comm_cart.Sendrecv(sendbuf=sendbuf_bottom, dest=bottom_dst, sendtag=2,
-    #                    recvbuf=recvbuf_bottom, source=bottom_src, recvtag=2)
-    #     f_np[:, :, -1] = recvbuf_bottom  
-    
-    #     # print(f"[Rank {rank}] Communicating TOP", flush=True)
-    #     sendbuf_top = np.ascontiguousarray(f_np[:, :, -2])
-    #     recvbuf_top = np.ascontiguousarray(f_np[:, :, 0])
-    #     comm_cart.Sendrecv(sendbuf=sendbuf_top, dest=top_dst, sendtag=3,
-    #                    recvbuf=recvbuf_top, source=top_src, recvtag=3)
-    #     f_np[:, :, 0] = recvbuf_top  
-
     return jnp.array(f_np)
 
 local_devices = jax.local_devices()
@@ -252,9 +255,10 @@ with mesh:
 
     def lbm_collide_no_stream(f, is_left, is_right):
         f_interior = f[:, 1:-1, :]  # all y, interior x
-        f_interior, _ = collide(f_interior)
         f_interior = apply_bounce_back(f_interior, is_left, is_right)
         f_interior = apply_top_lid_velocity(f_interior)
+        f_interior, _ = collide(f_interior)
+     
         f = f.at[:, 1:-1, :].set(f_interior)
         return f
     
@@ -283,6 +287,10 @@ with mesh:
 
     for step in range(NSTEPS):
 
+        f = lbm_collide_no_stream(f, is_left_edge, is_right_edge)
+
+        f = lbm_stream(f)
+        
         f.block_until_ready()  # Ensure f is ready before proceeding
         f_cpu = f.addressable_data(0)  # Get CPU array for MPI communication     
           
@@ -294,21 +302,18 @@ with mesh:
                 py
             )
 
-        if not is_left_edge:
-            diff_left = jnp.abs(f_cpu[:,1,:] - f_cpu[:,0,:])
-            print(f"[STEP:{step}] [Rank {rank}] Max left halo mismatch: {diff_left.max()}")
+        # if not is_left_edge:
+        #     diff_left = jnp.abs(f_cpu[:,1,:] - f_cpu[:,0,:])
+        #     print(f"[STEP:{step}] [Rank {rank}] Max left halo mismatch: {diff_left.max()}")
         
-        if not is_right_edge:
-            diff_right = jnp.abs(f_cpu[:,-2,:] - f_cpu[:,-1,:])
-            print(f"[STEP:{step}] [Rank {rank}] Max right halo mismatch: {diff_right.max()}")
+        # if not is_right_edge:
+        #     diff_right = jnp.abs(f_cpu[:,-2,:] - f_cpu[:,-1,:])
+        #     print(f"[STEP:{step}] [Rank {rank}] Max right halo mismatch: {diff_right.max()}")
 
         comm_cart.barrier() 
         f = jax.device_put(f_cpu, f.sharding)  
 
-        f = lbm_stream(f)
-
-        f = lbm_collide_no_stream(f, is_left_edge, is_right_edge)
-      
+    
         if step % 100 == 0:
             rho = jnp.einsum('ijk->jk', f[:, 1:-1, :])
             u = jnp.einsum('ai,ixy->axy', c, f[:, 1:-1, :]) / rho
