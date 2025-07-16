@@ -42,7 +42,7 @@ print(f"JAX backend: {jax.default_backend()}")
 
 # ✅ Simulation parameters
 NX, NY = 300, 300
-NSTEPS = 5000
+NSTEPS = 1000
 omega = 1.7
 u_max = 0.1
 nu = (1 / omega - 0.5) / 3
@@ -250,19 +250,19 @@ def communicate(f_ikl, comm_cart, left_src, left_dst, right_src, right_dst,
     f_np[:, 0, :] = recvbuf_right  
     
     # print(f"[Rank {rank}] Communicating BOTTOM", flush=True)
-    # if py > 1:
-    #     sendbuf_bottom = np.ascontiguousarray(f_np[:, :, 1])
-    #     recvbuf_bottom = np.ascontiguousarray(f_np[:, :, -1])
-    #     comm_cart.Sendrecv(sendbuf=sendbuf_bottom, dest=bottom_dst, sendtag=2,
-    #                    recvbuf=recvbuf_bottom, source=bottom_src, recvtag=2)
-    #     f_np[:, :, -1] = recvbuf_bottom  
+    if py > 1:
+        sendbuf_bottom = np.ascontiguousarray(f_np[:, :, 1])
+        recvbuf_bottom = np.ascontiguousarray(f_np[:, :, -1])
+        comm_cart.Sendrecv(sendbuf=sendbuf_bottom, dest=bottom_dst, sendtag=2,
+                       recvbuf=recvbuf_bottom, source=bottom_src, recvtag=2)
+        f_np[:, :, -1] = recvbuf_bottom  
     
-    #     # print(f"[Rank {rank}] Communicating TOP", flush=True)
-    #     sendbuf_top = np.ascontiguousarray(f_np[:, :, -2])
-    #     recvbuf_top = np.ascontiguousarray(f_np[:, :, 0])
-    #     comm_cart.Sendrecv(sendbuf=sendbuf_top, dest=top_dst, sendtag=3,
-    #                    recvbuf=recvbuf_top, source=top_src, recvtag=3)
-    #     f_np[:, :, 0] = recvbuf_top  
+        # print(f"[Rank {rank}] Communicating TOP", flush=True)
+        sendbuf_top = np.ascontiguousarray(f_np[:, :, -2])
+        recvbuf_top = np.ascontiguousarray(f_np[:, :, 0])
+        comm_cart.Sendrecv(sendbuf=sendbuf_top, dest=top_dst, sendtag=3,
+                       recvbuf=recvbuf_top, source=top_src, recvtag=3)
+        f_np[:, :, 0] = recvbuf_top  
 
     return jnp.array(f_np)
 
@@ -309,22 +309,26 @@ with mesh:
         f.block_until_ready()  # Ensure f is ready before proceeding
         f_cpu = f.addressable_data(0)  # Get CPU array for MPI communication            
         comm_cart.barrier()     
-        if size > 1 and (not is_left_edge or not is_right_edge):
+        if size > 1:
+            # print(f"[Rank {rank}] Step {step} communicating halos...", flush=True, file=sys.stderr)
             f_cpu = communicate(
-                f_cpu, comm_cart,
-                left_src, left_dst, right_src, right_dst,
-                bottom_src, bottom_dst, top_src, top_dst,
-                py
+                    f_cpu, comm_cart,
+                    left_src, left_dst, right_src, right_dst,
+                    bottom_src, bottom_dst, top_src, top_dst,
+                    py
             )
+            if not is_left_edge:
+           #     print(f"[Rank {rank}] Sent to left: {f_cpu[:,1,:]}")
+           #     print(f"[Rank {rank}] Received left halo: {f_cpu[:,0,:]}")
+                diff_left = jnp.abs(f_cpu[:,1,:] - f_cpu[:,0,:])  # inner vs received halo
+                print(f"[STEP:{step}] [Rank {rank}] Max left halo mismatch: {diff_left.max()}")
 
-        if not is_left_edge:
-            diff_left = jnp.abs(f_cpu[:,1,:] - f_cpu[:,0,:])
-            print(f"[STEP:{step}] [Rank {rank}] Max left halo mismatch: {diff_left.max()}")
-        
-        if not is_right_edge:
-            diff_right = jnp.abs(f_cpu[:,-2,:] - f_cpu[:,-1,:])
-            print(f"[STEP:{step}] [Rank {rank}] Max right halo mismatch: {diff_right.max()}")
-
+            # For right boundary
+            if not is_right_edge:
+           #     print(f"[Rank {rank}] Sent to right: {f_cpu[:,-2,:]}")
+            #     print(f"[Rank {rank}] Received right halo: {f_cpu[:,-1,:]}")
+                diff_right = jnp.abs(f_cpu[:,-2,:] - f_cpu[:,-1,:])  # inner vs received halo
+                print(f"[STEP:{step}] [Rank {rank}] Max right halo mismatch: {diff_right.max()}")
         comm_cart.barrier() 
         f = jax.device_put(f_cpu, f.sharding)  
 
