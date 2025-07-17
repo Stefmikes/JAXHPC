@@ -204,20 +204,29 @@ is_top_edge = jnp.array(is_top_edge, dtype=bool)
 def communicate(f,comm_cart, left_src, left_dst, right_src, right_dst):
     # print(f"[Rank {rank}] Starting communicate()", flush=True, file=sys.stderr)
     # Left halo exchange
-    print("Rank", comm.Get_rank(), "f.shape before comm =", f.shape)
     
-    f = mpi4jax.sendrecv(
-        f[:, 1, :], dest=left_dst, sendtag=0,
-        recvbuf=f[:, -1, :], source=left_src, recvtag=0,
+    sendbuf_left = f[:, 1, :]
+    recvbuf_left = jnp.empty_like(sendbuf_left)
+    recvbuf_left, _ = mpi4jax.sendrecv(
+        sendbuf=sendbuf_left,
+        dest=left_dst, sendtag=0,
+        recvbuf=recvbuf_left,
+        source=left_src, recvtag=0,
         comm=comm_cart
-    )[0]
+    )
+    f = f.at[:, -1, :].set(recvbuf_left)
 
     # Right halo exchange
-    f= mpi4jax.sendrecv(
-        f[:, -2, :], dest=right_dst, sendtag=1,
-        recvbuf=f[:, 0, :], source=right_src, recvtag=1,
+    sendbuf_right = f[:, -2, :]
+    recvbuf_right = jnp.empty_like(sendbuf_right)
+    recvbuf_right, _ = mpi4jax.sendrecv(
+        sendbuf=sendbuf_right,
+        dest=right_dst, sendtag=1,
+        recvbuf=recvbuf_right,
+        source=right_src, recvtag=1,
         comm=comm_cart
-    )[0]
+    )
+    f = f.at[:, 0, :].set(recvbuf_right)
     
     return f
 
