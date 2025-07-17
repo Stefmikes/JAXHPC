@@ -204,9 +204,8 @@ is_top_edge = jnp.array(is_top_edge, dtype=bool)
 def communicate(f,comm_cart, left_src, left_dst, right_src, right_dst):
     # print(f"[Rank {rank}] Starting communicate()", flush=True, file=sys.stderr)
     # Extract contiguous slices for sending
-    sendbuf_left = f[:, 1, :].copy()   # ensure contiguous
-    recvbuf_left = jnp.empty_like(sendbuf_left)
-
+    sendbuf_left = f[:, 1, :].block_until_ready()  # ensure contiguous
+   
     # Left halo exchange
     recvbuf_left = mpi4jax.sendrecv(
         sendbuf=sendbuf_left,
@@ -215,12 +214,11 @@ def communicate(f,comm_cart, left_src, left_dst, right_src, right_dst):
         source=left_src, recvtag=0,
         comm=comm_cart
     )
-    f = f.at[:, 0, :].set(recvbuf_left)
+    f = f.at[:, -1, :].set(recvbuf_left)
 
     # Right halo exchange
-    sendbuf_right = f[:, -2, :].copy()
-    recvbuf_right = jnp.empty_like(sendbuf_right)
-
+    sendbuf_right = f[:, -2, :].block_until_ready()
+  
     recvbuf_right = mpi4jax.sendrecv(
         sendbuf=sendbuf_right,
         dest=right_dst, sendtag=1,
@@ -228,7 +226,7 @@ def communicate(f,comm_cart, left_src, left_dst, right_src, right_dst):
         source=right_src, recvtag=1,
         comm=comm_cart
     )
-    f = f.at[:, -1, :].set(recvbuf_right)
+    f = f.at[:, 0, :].set(recvbuf_right)
 
     return f
 
@@ -289,6 +287,7 @@ with mesh:
                 f, comm_cart, 
                 left_src, left_dst, 
                 right_src, right_dst)
+        comm_cart.barrier() 
         if not is_left_edge:
             diff_left = jnp.abs(f[:,1,:] - f[:,0,:])
             print(f"[DEBUG STEP:{step}] [Rank {rank}] Max left halo mismatch: {diff_left.max()}")
@@ -296,7 +295,7 @@ with mesh:
         if not is_right_edge:
             diff_right = jnp.abs(f[:,-2,:] - f[:,-1,:])
             print(f"[DEBUG STEP:{step}] [Rank {rank}] Max right halo mismatch: {diff_right.max()}")
-        comm_cart.barrier() 
+        
 
         if step % 100 == 0:
             rho = jnp.einsum('ijk->jk', f[:, 1:-1, :])
