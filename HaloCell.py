@@ -131,23 +131,6 @@ def apply_bounce_back(f, is_left, is_right):
     # f = corner_top_right(f)
     return f
 
-# def apply_top_lid_velocity(f, u_lid=jnp.array([-u_max, 0.0])):
-#     # f shape: (9, Nx_interior, Ny), where Nx_interior = Nx - 2 (no halos)
-#     rho_wall = (f[0, :, -1] + f[1, :, -1] + f[3, :, -1] +
-#                 2 * (f[4, :, -1] + f[7, :, -1] + f[8, :, -1]))
-#     incoming = jnp.array([2, 5, 6])
-    
-#     def body(i, f):
-#         i_ = incoming[i]
-#         i_opp = opposite[i_]
-#         ci_dot_u = c[0, i_] * u_lid[0] + c[1, i_] * u_lid[1]
-#         correction = 6.0 * w[i_] * rho_wall * ci_dot_u
-#         f = f.at[i_, :, -1].set(f[i_opp, :, -1] - correction)
-#         return f
-    
-#     f = jax.lax.fori_loop(0, len(incoming), body, f)
-#     return f
-
 def apply_top_lid_velocity(f, u_lid=jnp.array([-u_max, 0.0])):
     rho_wall = (f[0, :, -1] + f[1, :, -1] + f[3, :, -1] +
                 2 * (f[2, :, -1] + f[5, :, -1] + f[6, :, -1]))
@@ -194,8 +177,8 @@ f0 = jnp.zeros((9, local_NX + 2, local_NY), dtype=dtype)
 f0 = f0.at[:, 1:-1, :].set(f0_inner)
 
 # Initialize halos as copies of adjacent interior cells (simple zero-gradient BC for initialization)
-# f0 = f0.at[:, 0, :].set(f0[:, 1, :])       # left halo
-# f0 = f0.at[:, -1, :].set(f0[:, -2, :])     # right halo
+f0 = f0.at[:, 0, :].set(f0[:, 1, :])       # left halo
+f0 = f0.at[:, -1, :].set(f0[:, -2, :])     # right halo
 # f0 = f0.at[:, 1:-1, 0].set(f0[:, 1:-1, 1])       # bottom halo
 # f0 = f0.at[:, 1:-1, -1].set(f0[:, 1:-1, -2])     # top halo
 
@@ -304,16 +287,15 @@ with mesh:
 
         # if not is_left_edge:
         #     diff_left = jnp.abs(f_cpu[:,1,:] - f_cpu[:,0,:])
-        #     print(f"[STEP:{step}] [Rank {rank}] Max left halo mismatch: {diff_left.max()}")
+        #     print(f"[DEBUG STEP:{step}] [Rank {rank}] Max left halo mismatch: {diff_left.max()}")
         
         # if not is_right_edge:
         #     diff_right = jnp.abs(f_cpu[:,-2,:] - f_cpu[:,-1,:])
-        #     print(f"[STEP:{step}] [Rank {rank}] Max right halo mismatch: {diff_right.max()}")
+        #     print(f"[DEBUG STEP:{step}] [Rank {rank}] Max right halo mismatch: {diff_right.max()}")
 
         comm_cart.barrier() 
         f = jax.device_put(f_cpu, f.sharding)  
 
-    
         if step % 100 == 0:
             rho = jnp.einsum('ijk->jk', f[:, 1:-1, :])
             u = jnp.einsum('ai,ixy->axy', c, f[:, 1:-1, :]) / rho
@@ -330,7 +312,7 @@ with mesh:
 
                     for rank_id, shard in all_ranked_shards:
                         while shard.ndim > 3:
-                            shard = shard[0]  # strip excess batch dim
+                            shard = shard[0] 
                         assert shard.shape[0] == 2, f"[Rank {rank_id}] Unexpected shard shape: {shard.shape}"
                         sorted_shards.append(shard)
 
