@@ -73,7 +73,7 @@ mpirun -np $SLURM_NTASKS \
   --mca plm_rsh_no_tree_spawn 1 \
   bash -c '
     export CUDA_VISIBLE_DEVICES=$(echo $CUDA_VISIBLE_DEVICES | cut -d',' -f$((OMPI_COMM_WORLD_LOCAL_RANK+1)))
-    python MPI4jax.py
+    python MPI4Jax.py
 '
 
 
