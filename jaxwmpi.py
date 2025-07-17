@@ -283,7 +283,7 @@ with mesh:
         f = lbm_stream(f)
 
         comm_cart.barrier()
-        if size > 1 and (not is_left_edge or not is_right_edge):
+        if size > 1:
             f = communicate(
                 f, comm_cart, 
                 left_src, left_dst, 
