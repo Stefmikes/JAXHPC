@@ -41,7 +41,7 @@ print(f"JAX backend: {jax.default_backend()}")
 
 # ✅ Simulation parameters
 NX, NY = 300, 300
-NSTEPS = 30000
+NSTEPS = 10000
 omega = 1.7
 u_max = 0.1
 nu = (1 / omega - 0.5) / 3
@@ -125,10 +125,10 @@ def apply_bounce_back(f, is_left, is_right):
     f = jax.lax.cond(is_right, lambda f: bounce_from_right(f), lambda f: f, f)
 
     f = bounce_from_bottom(f)  
-    f = corner_bottom_left(f)
-    f = corner_bottom_right(f)
-    f = corner_top_left(f)
-    f = corner_top_right(f)
+    # f = corner_bottom_left(f)
+    # f = corner_bottom_right(f)
+    # f = corner_top_left(f)
+    # f = corner_top_right(f)
     return f
 
 # def apply_top_lid_velocity(f, u_lid=jnp.array([-u_max, 0.0])):
