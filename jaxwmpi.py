@@ -207,13 +207,15 @@ def communicate(f,comm_cart, left_src, left_dst, right_src, right_dst):
     sendbuf_left = f[:, 1, :]  # ensure contiguous
     recvbuf_right, req_right = mpi4jax.sendrecv(
         sendbuf_left, dest=right_dst, sendtag=0, 
-        source=right_src, recvtag=0, comm=comm_cart)
+        source=right_src, recvtag=0, comm=comm_cart,
+        recvbuf=None)
 
 
     sendbuf_right = f[:, -2, :]  # shape [9, local_NY]
     recvbuf_left, req_left = mpi4jax.sendrecv(
         sendbuf_right, dest=left_dst, sendtag=1, 
-        source=left_src, recvtag=1, comm=comm_cart)
+        source=left_src, recvtag=1, comm=comm_cart,
+        recvbuf=None)
 
     # Wait for communication to complete
     req_left.wait()
