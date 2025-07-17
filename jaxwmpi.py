@@ -207,7 +207,7 @@ def communicate(f,comm_cart, left_src, left_dst, right_src, right_dst):
     
     sendbuf_left = f[:, 1, :]
     recvbuf_left = jnp.empty_like(sendbuf_left)
-    recvbuf_left, _ = mpi4jax.sendrecv(
+    recvbuf_left, _, _ = mpi4jax.sendrecv(
         sendbuf=sendbuf_left,
         dest=left_dst, sendtag=0,
         recvbuf=recvbuf_left,
@@ -219,7 +219,7 @@ def communicate(f,comm_cart, left_src, left_dst, right_src, right_dst):
     # Right halo exchange
     sendbuf_right = f[:, -2, :]
     recvbuf_right = jnp.empty_like(sendbuf_right)
-    recvbuf_right, _ = mpi4jax.sendrecv(
+    recvbuf_right, _, _ = mpi4jax.sendrecv(
         sendbuf=sendbuf_right,
         dest=right_dst, sendtag=1,
         recvbuf=recvbuf_right,
