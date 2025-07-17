@@ -40,7 +40,7 @@ print(f"Process {jax.process_index()} on {socket.gethostname()} using {jax.local
 print(f"JAX backend: {jax.default_backend()}")
 
 # ✅ Simulation parameters
-NX, NY = 3000, 3000
+NX, NY = 300, 300
 NSTEPS = 10000
 omega = 1.7
 u_max = 0.1
@@ -377,6 +377,7 @@ max_elapsed = comm.reduce(elapsed, op=MPI.MAX, root=0)
 if rank == 0:
     global_blups = total_updates / max_elapsed / 1e9
     print(f"\n[Global Results]")
+    print(f"Domain: {NX}x{NY}, Steps: {NSTEPS}")
     print(f"Max Elapsed Time: {max_elapsed:.2f} s")
     print(f"Global BLUPS: {global_blups:.3f}")
 
