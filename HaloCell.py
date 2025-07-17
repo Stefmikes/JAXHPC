@@ -359,14 +359,26 @@ with mesh:
     end = time.time()
 
 elapsed = end - start
-total_updates = NX * NY * NSTEPS
-blups = total_updates / elapsed / 1e9
+
+# Local work-only (accurate per-rank throughput)
+local_updates = local_NX * local_NY * NSTEPS
+local_blups = local_updates / elapsed / 1e9
 
 print(f"\nRank {rank}:")
 print(f"Time: {elapsed:.2f} s")
-print(f"BLUPS: {blups:.3f}")
-print(f"Domain: {NX}x{NY}, Steps: {NSTEPS}")
+print(f"Local BLUPS: {local_blups:.3f}")
+print(f"Domain: {local_NX}x{local_NY}, Steps: {NSTEPS}")
 print(f"Viscosity: {nu:.4e}")
+
+total_updates = NX * NY * NSTEPS
+blups = total_updates / elapsed / 1e9
+max_elapsed = comm.reduce(elapsed, op=MPI.MAX, root=0)
+
+if rank == 0:
+    global_blups = total_updates / max_elapsed / 1e9
+    print(f"\n[Global Results]")
+    print(f"Max Elapsed Time: {max_elapsed:.2f} s")
+    print(f"Global BLUPS: {global_blups:.3f}")
 
 # if rank == 0:
 #     import imageio
