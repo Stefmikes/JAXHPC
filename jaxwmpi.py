@@ -215,7 +215,7 @@ def communicate(f,comm_cart, left_src, left_dst, right_src, right_dst):
         source=left_src, recvtag=0,
         comm=comm_cart
     )
-    f = f.at[:, -1, :].set(recvbuf_left)
+    f = f.at[:, 0, :].set(recvbuf_left)
 
     # Right halo exchange
     sendbuf_right = f[:, -2, :].copy()
@@ -228,7 +228,7 @@ def communicate(f,comm_cart, left_src, left_dst, right_src, right_dst):
         source=right_src, recvtag=1,
         comm=comm_cart
     )
-    f = f.at[:, 0, :].set(recvbuf_right)
+    f = f.at[:, -1, :].set(recvbuf_right)
 
     return f
 
@@ -283,8 +283,6 @@ with mesh:
 
         f = lbm_stream(f)
 
-        f.block_until_ready()
-        f = f.addressable_data(0)
         comm_cart.barrier()
         if size > 1 and (not is_left_edge or not is_right_edge):
             f = communicate(
