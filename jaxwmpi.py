@@ -205,7 +205,7 @@ def communicate(f,comm_cart, left_src, left_dst, right_src, right_dst):
     # print(f"[Rank {rank}] Starting communicate()", flush=True, file=sys.stderr)
     # Left halo exchange
 
-    sendbuf_left = f[:, 1, :]
+    sendbuf_left = f[:, 1, :].copy()
     recvbuf_left = jnp.empty_like(sendbuf_left)
     recvbuf_left = mpi4jax.sendrecv(
         sendbuf=sendbuf_left,
@@ -217,7 +217,7 @@ def communicate(f,comm_cart, left_src, left_dst, right_src, right_dst):
     f = f.at[:, -1, :].set(recvbuf_left)
 
     # Right halo exchange
-    sendbuf_right = f[:, -2, :]
+    sendbuf_right = f[:, -2, :].copy()
     recvbuf_right = jnp.empty_like(sendbuf_right)
     recvbuf_right = mpi4jax.sendrecv(
         sendbuf=sendbuf_right,
