@@ -53,6 +53,14 @@ print(f"NX={NX}, NY={NY}, NSTEPS={NSTEPS}, OMEGA={omega}, U_MAX={u_max}")
 px = size  # Decompose only in X direction
 py = 1     # No decomposition in Y
 
+a = jnp.ones((10,), dtype=jnp.float32)
+b = jnp.zeros((10,), dtype=jnp.float32)
+
+# This should not raise or copy to CPU
+comm.Sendrecv(sendbuf=a, dest=1, sendtag=0,
+              recvbuf=b, source=0, recvtag=0)
+b_out = b
+
 assert NX % px == 0, f"NX not divisible by number of processes: NX={NX}, px={px}"
 
 local_NX = NX //px
