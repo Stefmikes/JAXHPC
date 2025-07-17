@@ -30,7 +30,7 @@ else
     source $ENV_DIR/bin/activate
 fi
 
- Set environment variables
+# Set environment variables
 export NX=3000
 export NY=3000
 export NSTEPS=10000
@@ -50,7 +50,7 @@ export LD_LIBRARY_PATH=$(dirname $(which mpicc))/../lib:$LD_LIBRARY_PATH
 # Suppress warnings
 export OMPI_MCA_coll_hcoll_enable=0
 export OMPI_MCA_pml=ob1
-export MPI4JAX_USE_CUDA_MPI=1
+export MPI4JAX_USE_CUDA_MPI=0
 
 # CPU threading
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK

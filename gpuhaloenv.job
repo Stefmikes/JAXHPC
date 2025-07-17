@@ -30,7 +30,7 @@ else
     source $ENV_DIR/bin/activate
 fi
 
- Set environment variables
+# Set environment variables
 export NX=16000
 export NY=16000
 export NSTEPS=5000
