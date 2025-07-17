@@ -203,11 +203,12 @@ is_top_edge = jnp.array(is_top_edge, dtype=bool)
 
 def communicate(f,comm_cart, left_src, left_dst, right_src, right_dst):
     # print(f"[Rank {rank}] Starting communicate()", flush=True, file=sys.stderr)
-    # Left halo exchange
-
-    sendbuf_left = f[:, 1, :].copy()
+    # Extract contiguous slices for sending
+    sendbuf_left = f[:, 1, :].copy()   # ensure contiguous
     recvbuf_left = jnp.empty_like(sendbuf_left)
-    recvbuf_left = mpi4jax.sendrecv(
+
+    # Left halo exchange
+    recvbuf_left, _ = mpi4jax.sendrecv(
         sendbuf=sendbuf_left,
         dest=left_dst, sendtag=0,
         recvbuf=recvbuf_left,
@@ -219,7 +220,8 @@ def communicate(f,comm_cart, left_src, left_dst, right_src, right_dst):
     # Right halo exchange
     sendbuf_right = f[:, -2, :].copy()
     recvbuf_right = jnp.empty_like(sendbuf_right)
-    recvbuf_right = mpi4jax.sendrecv(
+
+    recvbuf_right, _ = mpi4jax.sendrecv(
         sendbuf=sendbuf_right,
         dest=right_dst, sendtag=1,
         recvbuf=recvbuf_right,
@@ -227,6 +229,7 @@ def communicate(f,comm_cart, left_src, left_dst, right_src, right_dst):
         comm=comm_cart
     )
     f = f.at[:, 0, :].set(recvbuf_right)
+
     
     return f
 
