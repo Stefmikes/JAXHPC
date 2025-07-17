@@ -284,7 +284,7 @@ with mesh:
         f = lbm_stream(f)
 
         f.block_until_ready()
-        
+        f = f.addressable_data(0)
         comm_cart.barrier()
         if size > 1 and (not is_left_edge or not is_right_edge):
             f = communicate(
