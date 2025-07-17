@@ -281,21 +281,21 @@ with mesh:
         f = lbm_collide_no_stream(f, is_left_edge, is_right_edge)
         f = lbm_stream(f)   
         
-        # comm_cart.barrier()
-        # if size > 1 and (not is_left_edge or not is_right_edge):
-        #     f = communicate(
-        #         f, comm_cart, 
-        #         left_src, left_dst, 
-        #         right_src, right_dst)
+        comm_cart.barrier()
+        if size > 1 and (not is_left_edge or not is_right_edge):
+            f = communicate(
+                f, comm_cart, 
+                left_src, left_dst, 
+                right_src, right_dst)
        
-        # if not is_left_edge:
-        #     diff_left = jnp.abs(f[:,1,:] - f[:,0,:])
-        #     print(f"[DEBUG STEP:{step}] [Rank {rank}] Max left halo mismatch: {diff_left.max()}")
+        if not is_left_edge:
+            diff_left = jnp.abs(f[:,1,:] - f[:,0,:])
+            print(f"[DEBUG STEP:{step}] [Rank {rank}] Max left halo mismatch: {diff_left.max()}")
         
-        # if not is_right_edge:
-        #     diff_right = jnp.abs(f[:,-2,:] - f[:,-1,:])
-        #     print(f"[DEBUG STEP:{step}] [Rank {rank}] Max right halo mismatch: {diff_right.max()}")
-        # comm_cart.barrier() 
+        if not is_right_edge:
+            diff_right = jnp.abs(f[:,-2,:] - f[:,-1,:])
+            print(f"[DEBUG STEP:{step}] [Rank {rank}] Max right halo mismatch: {diff_right.max()}")
+        comm_cart.barrier() 
 
 
         if step % 100 == 0:
@@ -303,7 +303,7 @@ with mesh:
             u = jnp.einsum('ai,ixy->axy', c, f[:, 1:-1, :]) / rho
             u_np = np.array(u)
             ranked_shard = (rank, u_np)
-            all_ranked_shards = comm.gather(ranked_shard, root=0)
+            all_ranked_shards = comm_cart.gather(ranked_shard, root=0)
 
             if rank == 0:
 
