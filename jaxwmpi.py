@@ -282,8 +282,11 @@ with mesh:
 
         f = lbm_stream(f)
 
+        f.block_until_ready()  # Ensure f is ready before proceeding
+        f = f.addressable_data(0)  # Get CPU array for MPI communication     
+        
         comm_cart.barrier()
-        if size > 1:
+        if size > 1 and (not is_left_edge or not is_right_edge):
             f = communicate(
                 f, comm_cart, 
                 left_src, left_dst, 
@@ -297,6 +300,7 @@ with mesh:
             diff_right = jnp.abs(f[:,-2,:] - f[:,-1,:])
             print(f"[DEBUG STEP:{step}] [Rank {rank}] Max right halo mismatch: {diff_right.max()}")
         comm_cart.barrier() 
+        f = jax.device_put(f, f.sharding)  
 
         if step % 100 == 0:
             rho = jnp.einsum('ijk->jk', f[:, 1:-1, :])
