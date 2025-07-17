@@ -11,7 +11,7 @@ from jax.experimental import mesh_utils, multihost_utils
 from jax.sharding import Mesh, PartitionSpec as P, NamedSharding
 from jax.experimental.pjit import pjit
 from mpi4py import MPI
-import MPI4Jax
+import mpi4jax
 
 #  MPI Initialization
 comm = MPI.COMM_WORLD
