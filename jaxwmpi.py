@@ -294,6 +294,7 @@ with mesh:
         if not is_right_edge:
             diff_right = jnp.abs(f[:,-2,:] - f[:,-1,:])
             print(f"[DEBUG STEP:{step}] [Rank {rank}] Max right halo mismatch: {diff_right.max()}")
+        comm_cart.barrier() 
 
         if step % 100 == 0:
             rho = jnp.einsum('ijk->jk', f[:, 1:-1, :])

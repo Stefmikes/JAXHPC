@@ -31,9 +31,9 @@ else
 fi
 
 # Set environment variables
-export NX=3000
-export NY=3000
-export NSTEPS=10000
+export NX=300
+export NY=300
+export NSTEPS=3000
 export OMEGA=1.7
 export U_MAX=0.1
 
