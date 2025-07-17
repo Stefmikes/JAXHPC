@@ -204,6 +204,15 @@ is_top_edge = jnp.array(is_top_edge, dtype=bool)
 def communicate(f,comm_cart, left_src, left_dst, right_src, right_dst):
     # print(f"[Rank {rank}] Starting communicate()", flush=True, file=sys.stderr)
     # Left halo exchange
+
+    result = mpi4jax.sendrecv(
+    sendbuf=sendbuf_left,
+    dest=left_dst, sendtag=0,
+    recvbuf=recvbuf_left,
+    source=left_src, recvtag=0,
+    comm=comm_cart
+    )
+    print(f"sendrecv returned: {result}, type: {type(result)}")
     
     sendbuf_left = f[:, 1, :]
     recvbuf_left = jnp.empty_like(sendbuf_left)
