@@ -279,11 +279,7 @@ with mesh:
     for step in range(NSTEPS):
 
         f = lbm_collide_no_stream(f, is_left_edge, is_right_edge)
-
-        f = lbm_stream(f)
-
-        f.block_until_ready()  # Ensure f is ready before proceeding
-        f = f.addressable_data(0)  # Get CPU array for MPI communication     
+        f = lbm_stream(f)   
         
         comm_cart.barrier()
         if size > 1 and (not is_left_edge or not is_right_edge):
@@ -300,7 +296,7 @@ with mesh:
             diff_right = jnp.abs(f[:,-2,:] - f[:,-1,:])
             print(f"[DEBUG STEP:{step}] [Rank {rank}] Max right halo mismatch: {diff_right.max()}")
         comm_cart.barrier() 
-        f = jax.device_put(f, f.sharding)  
+
 
         if step % 100 == 0:
             rho = jnp.einsum('ijk->jk', f[:, 1:-1, :])
@@ -335,6 +331,8 @@ with mesh:
 
                 u_x = u_combined[0]
                 u_y = u_combined[1]
+                print(f"[DEBUG] Step {step}: max rho = {np.max(rho)}, min rho = {np.min(rho)}")
+                print(f"[DEBUG] Step {step}: any NaNs in u_x = {np.isnan(u_x).any()}")
 
                 speed = np.sqrt(u_x**2 + u_y**2)
                 print(f"Step {step}: top lid max u_x = {u_x[:, -1].max():.4f}")
