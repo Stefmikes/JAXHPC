@@ -200,30 +200,34 @@ is_right_edge = jnp.array(is_right_edge, dtype=bool)
 is_bottom_edge = jnp.array(is_bottom_edge, dtype=bool)
 is_top_edge = jnp.array(is_top_edge, dtype=bool)
 
-
+@jax.jit
 def communicate(f,comm_cart, left_src, left_dst, right_src, right_dst):
     # print(f"[Rank {rank}] Starting communicate()", flush=True, file=sys.stderr)
     # Extract contiguous slices for sending
-    sendbuf_left = f[:, 1, :]  # ensure contiguous
-    recvbuf_right, req_right = mpi4jax.sendrecv(
-        sendbuf_left, dest=right_dst, sendtag=0, 
-        source=right_src, recvtag=0, comm=comm_cart,
-        recvbuf=None)
+    sendbuf_left = f[:, 1, :].block_until_ready()  # ensure contiguous
+    recvbuf_left = jnp.empty_like(sendbuf_left)
+    # Left halo exchange
+    recvbuf_left = mpi4jax.sendrecv(
+        sendbuf=sendbuf_left,
+        dest=left_dst, sendtag=0,
+        recvbuf=recvbuf_left,
+        source=left_src, recvtag=0,
+        comm=comm_cart
+    )
+    f = f.at[:, -1, :].set(recvbuf_left)
 
+    # Right halo exchange
+    sendbuf_right = f[:, -2, :].block_until_ready()
+    recvbuf_right = jnp.empty_like(sendbuf_right)
 
-    sendbuf_right = f[:, -2, :]  # shape [9, local_NY]
-    recvbuf_left, req_left = mpi4jax.sendrecv(
-        sendbuf_right, dest=left_dst, sendtag=1, 
-        source=left_src, recvtag=1, comm=comm_cart,
-        recvbuf=None)
-
-    # Wait for communication to complete
-    req_left.wait()
-    req_right.wait()
-
-    # Update halos with received data
-    f = f.at[:, -1, :].set(recvbuf_right)
-    f = f.at[:, 0, :].set(recvbuf_left)
+    recvbuf_right = mpi4jax.sendrecv(
+        sendbuf=sendbuf_right,
+        dest=right_dst, sendtag=1,
+        recvbuf=recvbuf_right,
+        source=right_src, recvtag=1,
+        comm=comm_cart
+    )
+    f = f.at[:, 0, :].set(recvbuf_right)
 
     return f
 
@@ -277,7 +281,7 @@ with mesh:
         f = lbm_collide_no_stream(f, is_left_edge, is_right_edge)
 
         f = lbm_stream(f)
-        f.block_until_ready()
+        
         comm_cart.barrier()
         if size > 1 and (not is_left_edge or not is_right_edge):
             f = communicate(
