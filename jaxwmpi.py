@@ -230,7 +230,6 @@ def communicate(f,comm_cart, left_src, left_dst, right_src, right_dst):
     )
     f = f.at[:, 0, :].set(recvbuf_right)
 
-    
     return f
 
 local_devices = jax.local_devices()
@@ -283,6 +282,8 @@ with mesh:
         f = lbm_collide_no_stream(f, is_left_edge, is_right_edge)
 
         f = lbm_stream(f)
+
+        f.block_until_ready()
         
         comm_cart.barrier()
         if size > 1 and (not is_left_edge or not is_right_edge):
