@@ -279,13 +279,13 @@ with mesh:
                 py
             )
 
-        if not is_left_edge:
-            diff_left = jnp.abs(f_cpu[:,1,:] - f_cpu[:,0,:])
-            print(f"[DEBUG STEP:{step}] [Rank {rank}] Max left halo mismatch: {diff_left.max()}")
+        # if not is_left_edge:
+        #     diff_left = jnp.abs(f_cpu[:,1,:] - f_cpu[:,0,:])
+        #     print(f"[DEBUG STEP:{step}] [Rank {rank}] Max left halo mismatch: {diff_left.max()}")
         
-        if not is_right_edge:
-            diff_right = jnp.abs(f_cpu[:,-2,:] - f_cpu[:,-1,:])
-            print(f"[DEBUG STEP:{step}] [Rank {rank}] Max right halo mismatch: {diff_right.max()}")
+        # if not is_right_edge:
+        #     diff_right = jnp.abs(f_cpu[:,-2,:] - f_cpu[:,-1,:])
+        #     print(f"[DEBUG STEP:{step}] [Rank {rank}] Max right halo mismatch: {diff_right.max()}")
 
         comm_cart.barrier() 
         f = jax.device_put(f_cpu, f.sharding)  
