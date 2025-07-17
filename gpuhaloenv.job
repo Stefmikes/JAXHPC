@@ -1,0 +1,79 @@
+#!/bin/bash -x
+#SBATCH --job-name=JAXHPCENV
+#SBATCH --partition=dev_gpu_h100
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=4
+#SBATCH --gpus-per-node=4
+#SBATCH --time=00:30:00
+#SBATCH --mem=64G
+#SBATCH --export=ALL
+
+set -o pipefail
+export PYTHONUNBUFFERED=1
+
+# Load compatible modules
+module load lib/hdf5/1.14-gnu-14.2-openmpi-5.0
+module load devel/python/3.11.7-gnu-14.2
+module load devel/cuda/12.8
+
+ENV_DIR=$HOME/gpuMPI_jax_env
+
+# Create environment if needed
+if [ ! -d "$ENV_DIR" ]; then
+    python -m venv $ENV_DIR
+    source $ENV_DIR/bin/activate
+    pip install --upgrade pip
+    pip install --upgrade "jax[cuda12]"
+    MPICC=mpicc pip install --no-binary=mpi4py mpi4py
+    pip install numpy matplotlib imageio pillow rich
+else
+    source $ENV_DIR/bin/activate
+fi
+
+ Set environment variables
+export NX=16000
+export NY=16000
+export NSTEPS=5000
+export OMEGA=1.7
+export U_MAX=0.1
+
+# Prevent JAX from allocating all memory
+export TF_GPU_ALLOCATOR=cuda_malloc_async
+export XLA_PYTHON_CLIENT_PREALLOCATE=false
+export XLA_PYTHON_CLIENT_MEM_FRACTION=0.85
+
+
+# Fix CUDA/MPI path issues
+unset LD_LIBRARY_PATH
+export LD_LIBRARY_PATH=$(dirname $(which mpicc))/../lib:$LD_LIBRARY_PATH
+
+# Suppress warnings
+export OMPI_MCA_coll_hcoll_enable=0
+export OMPI_MCA_pml=ob1
+
+# CPU threading
+export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
+
+# GPU check
+nvidia-smi
+python -c "import jax; print('JAX devices:', jax.devices())"
+
+echo "Local rank: $SLURM_LOCALID"
+echo "CUDA_VISIBLE_DEVICES before mpirun: $CUDA_VISIBLE_DEVICES"
+# Ensure environment variables for distributed JAX
+export JAX_NUM_PROCESSES=$SLURM_NTASKS
+export JAX_COORDINATOR_ADDRESS=$(scontrol show hostname $SLURM_NODELIST | head -n 1):1234
+
+#For multiple nodes, we need to set CUDA_VISIBLE_DEVICES to 0 for each node
+mpirun -np $SLURM_NTASKS \
+  --bind-to none --map-by slot \
+  -x PATH -x LD_LIBRARY_PATH -x PYTHONPATH \
+  -x NCCL_DEBUG=INFO -x XLA_PYTHON_CLIENT_PREALLOCATE=false \
+  -x JAX_NUM_PROCESSES -x JAX_COORDINATOR_ADDRESS \
+  --mca plm_rsh_no_tree_spawn 1 \
+  bash -c '
+    export CUDA_VISIBLE_DEVICES=$(echo $CUDA_VISIBLE_DEVICES | cut -d',' -f$((OMPI_COMM_WORLD_LOCAL_RANK+1)))
+    python HaloCell_Env.py
+'
+
+
