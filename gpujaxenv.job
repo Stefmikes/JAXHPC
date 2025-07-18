@@ -1,10 +1,10 @@
 #!/bin/bash -x
 #SBATCH --job-name=JAXDIST
-#SBATCH --partition=gpu_h100
-#SBATCH --nodes=2
+#SBATCH --partition=dev_gpu_h100
+#SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --gpus-per-node=1
-#SBATCH --time=01:00:00
+#SBATCH --time=00:30:00
 #SBATCH --mem=64G
 #SBATCH --export=ALL
 
@@ -31,8 +31,8 @@ else
 fi
 
 # Set environment variables
-export NX=10000
-export NY=10000
+export NX=6000
+export NY=6000
 export NSTEPS=10000
 export OMEGA=1.7
 export U_MAX=0.1
