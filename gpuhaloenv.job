@@ -1,10 +1,10 @@
 #!/bin/bash -x
 #SBATCH --job-name=JAXHPCENV
-#SBATCH --partition=dev_gpu_h100
-#SBATCH --nodes=1
-#SBATCH --ntasks-per-node=4
-#SBATCH --gpus-per-node=4
-#SBATCH --time=00:30:00
+#SBATCH --partition=gpu_h100
+#SBATCH --nodes=2
+#SBATCH --ntasks-per-node=1
+#SBATCH --gpus-per-node=1
+#SBATCH --time=01:00:00
 #SBATCH --mem=64G
 #SBATCH --export=ALL
 
