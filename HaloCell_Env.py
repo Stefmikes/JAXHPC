@@ -39,7 +39,7 @@ print("Local devices:", jax.local_devices())
 print(f"Process {jax.process_index()} on {socket.gethostname()} using {jax.local_devices()}")
 print(f"JAX backend: {jax.default_backend()}")
 
-NX = int(os.getenv("NX", 1000))  # default fallback: 10000
+NX = int(os.getenv("NX", 1000))  # default fallback: 1000
 NY = int(os.getenv("NY", 1000))
 NSTEPS = int(os.getenv("NSTEPS", 5000))
 omega = float(os.getenv("OMEGA", 1.6))
