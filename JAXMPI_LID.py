@@ -31,6 +31,8 @@ if size > 1 and "JAX_DIST_INITIALIZED" not in os.environ:
     )
     os.environ["JAX_DIST_INITIALIZED"] = "1"
 
+devices = jax.devices()  
+
 print("Starting JAX PJIT simulation...")
 print(f"Rank: {rank}, Size: {size}")
 print("All visible devices:", jax.devices())
@@ -39,7 +41,7 @@ print(f"Process {jax.process_index()} on {socket.gethostname()} using {jax.local
 print(f"JAX backend: {jax.default_backend()}")
 
 # ✅ Simulation parameters
-NX, NY = 6000, 6000
+NX, NY = 10000, 10000
 NSTEPS = 10000
 omega = 1.6
 u_max = 0.1
@@ -112,8 +114,9 @@ while num_devices % px != 0:
 py = num_devices // px
 print(f"Using 2D mesh shape: ({px}, {py})")
 
-mesh = Mesh(mesh_utils.create_device_mesh((px, py)), axis_names=('x', 'y'))
-
+# Use actual number of devices
+mesh_shape = (px, py)
+mesh = Mesh(np.array(devices).reshape(mesh_shape), axis_names=("x", "y"))
 
 with mesh:
     sharding = NamedSharding(mesh, P(None, 'x', 'y'))
