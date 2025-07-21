@@ -37,7 +37,7 @@ NY=40 #int(input("ny = "))
 scale  = 1               # set simulation size
 #NX     = 32*scale        # domain size
 #NY     = NX
-NSTEPS = 2000*scale*scale # number of simulation time steps
+NSTEPS = 10000*scale*scale # number of simulation time steps
 NMSG   = 50*scale*scale  # show messages every NMSG time steps
 vis    = False           # show visualisation; set to False for performance measurements
 NVIS   = NMSG            # show visualisation every NVIS time steps
@@ -69,19 +69,19 @@ amp=np.array(u[0,NX//2,NY//8]) # The amplitud of u in time
 #
 start = time.time()
 
-fig, ax = plt.subplots()
-ax.plot(u[0,NX//2,:])
-ax.set_title('Wave decay')
-ax.set_xlabel('y')
-ax.set_ylabel('Amplitude')
-for n in range(1,2000):
+# fig, ax = plt.subplots()
+# ax.plot(u[0,NX//2,:])
+# ax.set_title('Wave decay')
+# ax.set_xlabel('y')
+# ax.set_ylabel('Amplitude')
+for n in range(1,10000):
     f = Stream(f)
     f = Collide(f)
-    if n%100==0:
-        # Tmeasure=np.append(Tmeasure,np.array(time))
-        u = np.einsum('ai,ixy->axy',c,f)/rho  
-        ax.plot(u[0,NX//2,:])
-        amp=np.append(amp,u[0,NX//2,NY//8])
+#     if n%100==0:
+#         # Tmeasure=np.append(Tmeasure,np.array(time))
+#         u = np.einsum('ai,ixy->axy',c,f)/rho  
+#         ax.plot(u[0,NX//2,:])
+#         amp=np.append(amp,u[0,NX//2,NY//8])
 
     
 end = time.time()
@@ -93,12 +93,12 @@ print(f"Elapsed time: {elapsed_time:.3f} seconds")
 print(f"Performance: {blups:.3f} BLUPS (Billion Lattice Updates Per Second)")
 
 # Plotting the amplitude decay
-fig, ax = plt.subplots()
-ax.plot(amp/amp[0])
-ax.set_title('Aplitude decay')
-ax.set_xlabel('Time t')
-ax.set_ylabel('Amplitude')
-plt.show()
+# fig, ax = plt.subplots()
+# ax.plot(amp/amp[0])
+# ax.set_title('Aplitude decay')
+# ax.set_xlabel('Time t')
+# ax.set_ylabel('Amplitude')
+# plt.show()
 # %%
 
 
